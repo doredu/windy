@@ -6,8 +6,9 @@ import { listen } from "@tauri-apps/api/event";
 
 export interface HistoryItemDto {
   id: number;
-  kind: "text" | "image" | "files";
+  kind: "text" | "image" | "files" | "richtext";
   preview: string;
+  thumbnail: string | null;
   created_at: number;
 }
 
