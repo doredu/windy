@@ -51,25 +51,15 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         return None;
     }
 
-    if let Some(paths) = crate::win32::read_hdrop() {
-        let joined = paths.join("\n");
-        let preview = if paths.len() == 1 {
-            paths[0].clone()
-        } else {
-            format!("{} files", paths.len())
-        };
-        let content = serde_json::to_string(&paths).ok()?;
-        return Some(NewItem {
-            kind: "files".into(),
-            content: Some(content),
-            image_path: None,
-            preview,
-            dedup_source: format!("files:{joined}"),
-        });
-    }
-
     let mut clipboard = retry(arboard::Clipboard::new).ok()?;
 
+    // Image data is checked before CF_HDROP: some apps (e.g. browsers'
+    // "Copy image") place both a CF_HDROP pointing at a throwaway temp file
+    // and real image bytes (CF_DIB/PNG) on the clipboard at once, to support
+    // consumers that only handle one or the other. Checking hdrop first
+    // would always win and capture the temp file path instead of the image
+    // itself. Plain file copies (e.g. from File Explorer) don't place image
+    // data on the clipboard, so this reordering doesn't affect that case.
     if let Ok(image) = retry(|| clipboard.get_image()) {
         let (w, h) = (image.width as u32, image.height as u32);
         let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
@@ -98,6 +88,23 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
             image_path: Some(path.to_string_lossy().to_string()),
             preview: format!("Image ({out_w}x{out_h})"),
             dedup_source: format!("image:{hash}"),
+        });
+    }
+
+    if let Some(paths) = crate::win32::read_hdrop() {
+        let joined = paths.join("\n");
+        let preview = if paths.len() == 1 {
+            paths[0].clone()
+        } else {
+            format!("{} files", paths.len())
+        };
+        let content = serde_json::to_string(&paths).ok()?;
+        return Some(NewItem {
+            kind: "files".into(),
+            content: Some(content),
+            image_path: None,
+            preview,
+            dedup_source: format!("files:{joined}"),
         });
     }
 
