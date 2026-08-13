@@ -14,6 +14,38 @@ pub fn is_excluded_from_history() -> bool {
     crate::win32::clipboard_has_exclude_format()
 }
 
+/// Clipboard reads can transiently fail right after `WM_CLIPBOARDUPDATE`
+/// fires, while the source app still holds the clipboard open. Retry a
+/// bounded number of times with a short sleep rather than silently dropping
+/// the capture.
+const CLIPBOARD_RETRY_ATTEMPTS: u32 = 5;
+const CLIPBOARD_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+
+fn retry<T, E>(mut f: impl FnMut() -> Result<T, E>) -> Result<T, E> {
+    let mut last_err = None;
+    for attempt in 0..CLIPBOARD_RETRY_ATTEMPTS {
+        match f() {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt + 1 < CLIPBOARD_RETRY_ATTEMPTS {
+                    std::thread::sleep(CLIPBOARD_RETRY_DELAY);
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap())
+}
+
+/// Hashes bytes with SHA-256, returning a hex digest suitable for use as a
+/// dedup key and/or content-addressed filename.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
 pub fn capture_current_clipboard() -> Option<NewItem> {
     if is_excluded_from_history() {
         return None;
@@ -36,29 +68,40 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         });
     }
 
-    let mut clipboard = arboard::Clipboard::new().ok()?;
+    let mut clipboard = retry(arboard::Clipboard::new).ok()?;
 
-    if let Ok(image) = clipboard.get_image() {
+    if let Ok(image) = retry(|| clipboard.get_image()) {
         let (w, h) = (image.width as u32, image.height as u32);
         let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
         let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
         let img_buf = image::RgbaImage::from_raw(w, h, image.bytes.into_owned())?;
         let resized = image::imageops::resize(&img_buf, out_w.max(1), out_h.max(1), image::imageops::FilterType::Triangle);
-        let id = uuid::Uuid::new_v4();
+
+        // Dedup/filename are derived from an actual hash of the resized
+        // pixel content, not a randomly generated UUID -- so the same
+        // image copied twice (including writing an item back to the OS
+        // clipboard on selection, which re-triggers capture) hashes to the
+        // same key and reuses the same file instead of growing without
+        // bound. Content-addressing the filename also means a duplicate
+        // never gets written to disk twice: the `path.exists()` check
+        // below skips the write entirely.
+        let hash = sha256_hex(resized.as_raw());
         let dir = crate::win32::images_dir();
         std::fs::create_dir_all(&dir).ok()?;
-        let path = dir.join(format!("{id}.png"));
-        resized.save(&path).ok()?;
+        let path = dir.join(format!("{hash}.png"));
+        if !path.exists() {
+            resized.save(&path).ok()?;
+        }
         return Some(NewItem {
             kind: "image".into(),
             content: None,
             image_path: Some(path.to_string_lossy().to_string()),
             preview: format!("Image ({out_w}x{out_h})"),
-            dedup_source: format!("image:{}", path.to_string_lossy()),
+            dedup_source: format!("image:{hash}"),
         });
     }
 
-    if let Ok(text) = clipboard.get_text() {
+    if let Ok(text) = retry(|| clipboard.get_text()) {
         let truncated = truncate_to_byte_cap(&text, TEXT_CAP_BYTES);
         let preview: String = truncated.chars().take(120).collect();
         return Some(NewItem {
@@ -142,6 +185,47 @@ mod tests {
         }).unwrap();
         let captured = capture_current_clipboard().expect("expected a captured item");
         assert!(captured.content.unwrap().len() <= 200_000);
+    }
+
+    #[test]
+    fn duplicate_image_content_dedups_to_the_same_file() {
+        let pixels = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+        let mut clipboard = arboard::Clipboard::new().unwrap();
+        clipboard
+            .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.clone().into_raw().into() })
+            .unwrap();
+        let first = capture_current_clipboard().expect("expected first image capture");
+        assert_eq!(first.kind, "image");
+
+        // Simulate copying the exact same image content again (e.g. what
+        // happens when selecting an image item writes it back to the OS
+        // clipboard, which re-triggers the listener).
+        clipboard
+            .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.into_raw().into() })
+            .unwrap();
+        let second = capture_current_clipboard().expect("expected second image capture");
+
+        assert_eq!(
+            first.dedup_source, second.dedup_source,
+            "identical pixel content must hash to the same dedup key, not a random UUID-derived one"
+        );
+        assert_eq!(
+            first.image_path, second.image_path,
+            "identical pixel content must resolve to the same content-addressed file, not a new one"
+        );
+    }
+
+    #[test]
+    fn different_image_content_gets_different_dedup_and_path() {
+        let a = image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255]));
+        let b = image::RgbaImage::from_pixel(4, 4, image::Rgba([9, 9, 9, 255]));
+        let mut clipboard = arboard::Clipboard::new().unwrap();
+        clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: a.into_raw().into() }).unwrap();
+        let first = capture_current_clipboard().expect("expected first image capture");
+        clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: b.into_raw().into() }).unwrap();
+        let second = capture_current_clipboard().expect("expected second image capture");
+        assert_ne!(first.dedup_source, second.dedup_source);
+        assert_ne!(first.image_path, second.image_path);
     }
 
     #[test]

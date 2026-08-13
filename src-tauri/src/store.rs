@@ -57,9 +57,57 @@ mod tests {
     #[test]
     fn settings_round_trip() {
         let store = mem_store();
-        assert_eq!(store.get_setting("retention_days").unwrap(), None);
+        // `open()` seeds defaults, so overwrite retention_days explicitly and
+        // check that round-trips.
         store.set_setting("retention_days", "30").unwrap();
         assert_eq!(store.get_setting("retention_days").unwrap(), Some("30".into()));
+    }
+
+    #[test]
+    fn open_seeds_default_settings_on_a_fresh_db() {
+        let store = mem_store();
+        assert_eq!(store.get_setting("max_items").unwrap(), Some("200".into()));
+        assert_eq!(store.get_setting("retention_days").unwrap(), Some("30".into()));
+    }
+
+    #[test]
+    fn open_does_not_overwrite_existing_settings() {
+        // Re-opening an already-configured DB must not clobber the user's
+        // chosen values back to the defaults.
+        let dir = std::env::temp_dir().join(format!("cm-settings-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("history.db");
+        {
+            let store = HistoryStore::open(&db_path).unwrap();
+            store.set_setting("max_items", "5").unwrap();
+        }
+        let store = HistoryStore::open(&db_path).unwrap();
+        assert_eq!(store.get_setting("max_items").unwrap(), Some("5".into()), "reopening must not reset a configured value to the default");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn prune_deletes_image_files_for_evicted_rows() {
+        let store = mem_store();
+        store.set_setting("max_items", "1").unwrap();
+        let dir = std::env::temp_dir().join(format!("cm-prune-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path1 = dir.join("a.png");
+        std::fs::write(&path1, b"a").unwrap();
+        let path2 = dir.join("b.png");
+        std::fs::write(&path2, b"b").unwrap();
+
+        store
+            .capture(NewItem { kind: "image".into(), content: None, image_path: Some(path1.to_string_lossy().into()), preview: "a".into(), dedup_source: "image:a".into() })
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store
+            .capture(NewItem { kind: "image".into(), content: None, image_path: Some(path2.to_string_lossy().into()), preview: "b".into(), dedup_source: "image:b".into() })
+            .unwrap();
+
+        assert!(!path1.exists(), "evicted row's image file must be deleted by prune, not left as an orphan");
+        assert!(path2.exists(), "surviving row's image file must not be deleted");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
 
@@ -116,7 +164,23 @@ impl HistoryStore {
             CREATE INDEX IF NOT EXISTS idx_items_dedup ON items(dedup_key);
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
-        Ok(Self { conn })
+        let store = Self { conn };
+        store.seed_default_settings()?;
+        Ok(store)
+    }
+
+    /// Seeds sensible defaults on a fresh install so pruning isn't a no-op
+    /// until the user visits Settings. Only fills in values that are not
+    /// already set, so an existing configured DB is never clobbered on
+    /// every app start.
+    fn seed_default_settings(&self) -> rusqlite::Result<()> {
+        if self.get_setting("max_items")?.is_none() {
+            self.set_setting("max_items", "200")?;
+        }
+        if self.get_setting("retention_days")?.is_none() {
+            self.set_setting("retention_days", "30")?;
+        }
+        Ok(())
     }
 
     pub fn capture(&self, item: NewItem) -> rusqlite::Result<i64> {
@@ -193,8 +257,15 @@ impl HistoryStore {
         Ok(())
     }
 
+    /// Deletes rows past `max_items`/`retention_days`, and also removes the
+    /// on-disk image file for any evicted row that had one -- otherwise
+    /// pruned/duplicate images would orphan files under the app data dir
+    /// forever, since SQLite deletion alone never touches the filesystem.
     fn prune(&self) -> rusqlite::Result<()> {
+        let mut evicted_image_paths: Vec<String> = Vec::new();
+
         if let Some(max) = self.get_setting("max_items")?.and_then(|v| v.parse::<i64>().ok()) {
+            evicted_image_paths.extend(self.image_paths_outside_limit(max)?);
             self.conn.execute(
                 "DELETE FROM items WHERE id NOT IN (
                     SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
@@ -204,8 +275,31 @@ impl HistoryStore {
         }
         if let Some(days) = self.get_setting("retention_days")?.and_then(|v| v.parse::<i64>().ok()) {
             let cutoff = now_ms() - days * 24 * 60 * 60 * 1000;
+            evicted_image_paths.extend(self.image_paths_before(cutoff)?);
             self.conn.execute("DELETE FROM items WHERE created_at < ?1", params![cutoff])?;
         }
+
+        for path in evicted_image_paths {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
+    }
+
+    fn image_paths_outside_limit(&self, max: i64) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT image_path FROM items WHERE image_path IS NOT NULL AND id NOT IN (
+                SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
+            )",
+        )?;
+        let rows = stmt.query_map(params![max], |row| row.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    fn image_paths_before(&self, cutoff: i64) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT image_path FROM items WHERE image_path IS NOT NULL AND created_at < ?1")?;
+        let rows = stmt.query_map(params![cutoff], |row| row.get::<_, String>(0))?;
+        rows.collect()
     }
 }
