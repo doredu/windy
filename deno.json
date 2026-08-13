@@ -1,5 +1,5 @@
 {
   "tasks": {
-    "build": "deno run -A npm:esbuild src/popup/popup.ts src/settings/settings.ts --bundle --outdir=dist --entry-names=[dir]/[name]"
+    "build": "deno run -A npm:esbuild src/popup/popup.ts src/settings/settings.ts --bundle --outdir=src/dist --entry-names=[dir]/[name]"
   }
 }
