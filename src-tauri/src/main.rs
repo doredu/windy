@@ -23,9 +23,24 @@ fn main() {
 
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
-            let store = std::sync::Arc::new(std::sync::Mutex::new(
-                store::HistoryStore::open(&app_data_dir.join("history.db"))?,
-            ));
+            // Images and the history DB must resolve to the same root (see
+            // finding 6 in the final review) -- record it once here before
+            // anything can call `clipboard_io::capture_current_clipboard`.
+            win32::set_app_data_dir(app_data_dir.clone());
+
+            let db_path = app_data_dir.join("history.db");
+            let opened = store::HistoryStore::open(&db_path).or_else(|open_err| {
+                // Spec: "DB missing or corrupt on startup: recreate an empty
+                // DB rather than crashing." Delete the (corrupt) file and any
+                // SQLite sidecar files, then retry opening once before
+                // giving up and letting `?` abort startup.
+                eprintln!("main: failed to open history DB ({open_err}); recreating a fresh database");
+                let _ = std::fs::remove_file(&db_path);
+                let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+                let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+                store::HistoryStore::open(&db_path)
+            })?;
+            let store = std::sync::Arc::new(std::sync::Mutex::new(opened));
             watcher::spawn(app.handle().clone(), store.clone());
             app.manage(store);
 
