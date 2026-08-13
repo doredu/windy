@@ -62,7 +62,7 @@ One Tauri binary with three logical parts:
 3. **Webview UI** (Deno-built TS/HTML/CSS) — two windows:
    - **Popup**: undecorated, transparent background, always-on-top, sized
      to content, positioned at the cursor (clamped to stay on-screen).
-     Listens for `show-popup` and `history-updated` events. Renders the
+     Listens for `toggle-popup` and `history-updated` events. Renders the
      history newest-first with `1`–`9` badges on the first nine rows.
      Closes on Esc, click-outside, or item selection.
    - **Settings**: separate plain window, opened from the tray menu. Fields:
