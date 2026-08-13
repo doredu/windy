@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.windy.clipboard-manager",
   "build": {
-    "frontendDist": "../src/popup",
+    "frontendDist": "../src",
     "beforeDevCommand": "deno task build",
     "beforeBuildCommand": "deno task build"
   },
@@ -12,6 +12,7 @@
     "windows": [
       {
         "title": "Clipboard Manager",
+        "url": "popup/index.html",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -31,9 +32,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
-    }
+    ]
   }
 }
