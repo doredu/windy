@@ -25,6 +25,29 @@ pub struct SettingsDto {
     pub start_with_windows: bool,
 }
 
+#[derive(Serialize, Clone)]
+pub struct UpdateStatusDto {
+    pub available: bool,
+    pub version: Option<String>,
+    pub notes: Option<String>,
+}
+
+impl UpdateStatusDto {
+    fn none() -> Self {
+        Self { available: false, version: None, notes: None }
+    }
+
+    fn from_update(update: &tauri_plugin_updater::Update) -> Self {
+        Self {
+            available: true,
+            version: Some(update.version.clone()),
+            notes: update.body.clone(),
+        }
+    }
+}
+
+pub type UpdateState = std::sync::Mutex<Option<tauri_plugin_updater::Update>>;
+
 pub type Store = Arc<Mutex<HistoryStore>>;
 
 #[tauri::command]
@@ -147,10 +170,58 @@ fn item_size(item: &crate::store::HistoryItem) -> Option<String> {
     }
 }
 
+use tauri_plugin_updater::UpdaterExt;
+
+async fn run_check(app: &AppHandle, state: &State<'_, UpdateState>) -> Result<UpdateStatusDto, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let dto = UpdateStatusDto::from_update(&update);
+            *state.lock().unwrap_or_else(PoisonError::into_inner) = Some(update);
+            Ok(dto)
+        }
+        Ok(None) => {
+            *state.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            Ok(UpdateStatusDto::none())
+        }
+        Err(e) => {
+            eprintln!("update check failed: {e}");
+            Ok(UpdateStatusDto::none())
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_update_status(state: State<'_, UpdateState>) -> Result<UpdateStatusDto, String> {
+    let cached = state.lock().unwrap_or_else(PoisonError::into_inner).as_ref().map(UpdateStatusDto::from_update);
+    Ok(cached.unwrap_or_else(UpdateStatusDto::none))
+}
+
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle, state: State<'_, UpdateState>) -> Result<UpdateStatusDto, String> {
+    run_check(&app, &state).await
+}
+
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>) -> Result<(), String> {
+    let update = state.lock().unwrap_or_else(PoisonError::into_inner).take().ok_or("no update available")?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    app.request_restart();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::HistoryItem;
+
+    #[test]
+    fn update_status_dto_none_reports_unavailable() {
+        let dto = UpdateStatusDto::none();
+        assert!(!dto.available);
+        assert!(dto.version.is_none());
+        assert!(dto.notes.is_none());
+    }
 
     #[test]
     fn dto_conversion_includes_base64_thumbnail_when_thumb_path_set() {

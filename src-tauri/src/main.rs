@@ -18,6 +18,9 @@ fn main() {
             commands::delete_item,
             commands::get_settings,
             commands::set_settings,
+            commands::get_update_status,
+            commands::check_for_updates,
+            commands::install_update,
         ])
         .setup(|app| {
             use tauri::Manager;
@@ -44,6 +47,16 @@ fn main() {
             let store = std::sync::Arc::new(std::sync::Mutex::new(opened));
             watcher::spawn(app.handle().clone(), store.clone());
             app.manage(store);
+
+            app.manage(commands::UpdateState::default());
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Manager;
+                    let state = app_handle.state::<commands::UpdateState>();
+                    let _ = commands::check_for_updates(app_handle.clone(), state).await;
+                });
+            }
 
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let settings_window_handle = settings_window.clone();
