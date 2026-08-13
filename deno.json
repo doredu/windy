@@ -1,5 +1,14 @@
 {
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "deno.ns", "esnext"]
+  },
   "tasks": {
     "build": "deno run -A npm:esbuild src/popup/popup.ts src/settings/settings.ts --bundle --outdir=src/dist --entry-names=[dir]/[name]"
+  },
+  "imports": {
+    "@tauri-apps/api/core": "npm:@tauri-apps/api@^2/core",
+    "@tauri-apps/api/event": "npm:@tauri-apps/api@^2/event",
+    "@tauri-apps/api/window": "npm:@tauri-apps/api@^2/window"
   }
 }

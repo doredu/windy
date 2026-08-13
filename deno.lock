@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "npm:@tauri-apps/api@2": "2.11.1",
     "npm:esbuild@*": "0.28.2"
   },
   "npm": {
@@ -134,6 +135,9 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
+    "@tauri-apps/api@2.11.1": {
+      "integrity": "sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA=="
+    },
     "esbuild@0.28.2": {
       "integrity": "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==",
       "optionalDependencies": [
@@ -167,5 +171,10 @@
       "scripts": true,
       "bin": true
     }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@tauri-apps/api@2"
+    ]
   }
 }

@@ -1,0 +1,8 @@
+body { margin: 0; font-family: "Segoe UI", sans-serif; background: rgba(30,30,34,0.9); color: #eee; border-radius: 8px; overflow: hidden; }
+#list { max-height: 320px; overflow-y: auto; }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+.row:hover { background: rgba(255,255,255,0.08); }
+.row:hover .delete { visibility: visible; }
+.badge { font-family: monospace; font-size: 11px; opacity: 0.6; width: 14px; }
+.preview { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.delete { visibility: hidden; background: none; border: none; color: #eee; cursor: pointer; font-size: 14px; }
