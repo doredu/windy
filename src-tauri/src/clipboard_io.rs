@@ -6,6 +6,7 @@ use crate::store::{HistoryItem, NewItem};
 
 const TEXT_CAP_BYTES: usize = 200_000;
 const IMAGE_MAX_DIMENSION: u32 = 1600;
+const THUMBNAIL_MAX_DIMENSION: u32 = 40;
 
 pub fn is_excluded_from_history() -> bool {
     // Windows convention: apps (e.g. password managers) register a custom
@@ -82,12 +83,21 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         if !path.exists() {
             resized.save(&path).ok()?;
         }
+
+        let thumb_scale = (THUMBNAIL_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
+        let (thumb_w, thumb_h) = ((w as f32 * thumb_scale) as u32, (h as f32 * thumb_scale) as u32);
+        let thumbnail = image::imageops::resize(&img_buf, thumb_w.max(1), thumb_h.max(1), image::imageops::FilterType::Triangle);
+        let thumb_path = dir.join(format!("{hash}_thumb.png"));
+        if !thumb_path.exists() {
+            thumbnail.save(&thumb_path).ok()?;
+        }
+
         return Some(NewItem {
             kind: "image".into(),
             content: None,
             content_alt: None,
             image_path: Some(path.to_string_lossy().to_string()),
-            thumb_path: None,
+            thumb_path: Some(thumb_path.to_string_lossy().to_string()),
             preview: format!("Image ({out_w}x{out_h})"),
             dedup_source: format!("image:{hash}"),
         });
@@ -265,5 +275,28 @@ mod tests {
         let content = captured.content.unwrap();
         assert!(content.len() <= 200_000, "byte length {} exceeds cap", content.len());
         assert!(std::str::from_utf8(content.as_bytes()).is_ok(), "truncation must not split a char");
+    }
+
+    #[test]
+    fn image_capture_produces_a_smaller_thumbnail_file() {
+        let pixels = image::RgbaImage::from_pixel(200, 100, image::Rgba([50, 60, 70, 255]));
+        let mut clipboard = arboard::Clipboard::new().unwrap();
+        clipboard
+            .set_image(arboard::ImageData { width: 200, height: 100, bytes: pixels.into_raw().into() })
+            .unwrap();
+        let captured = capture_current_clipboard().expect("expected an image capture");
+        assert_eq!(captured.kind, "image");
+        let thumb_path = captured.thumb_path.expect("image capture must produce a thumb_path");
+        let thumb_meta = std::fs::metadata(&thumb_path).expect("thumbnail file must exist on disk");
+        let full_meta = std::fs::metadata(captured.image_path.unwrap()).unwrap();
+        assert!(thumb_meta.len() < full_meta.len(), "thumbnail file should be smaller than the full-size image");
+
+        let thumb_img = image::open(&thumb_path).unwrap();
+        assert!(
+            thumb_img.width() <= 40 && thumb_img.height() <= 40,
+            "thumbnail dimensions ({}, {}) must be capped at 40px",
+            thumb_img.width(),
+            thumb_img.height()
+        );
     }
 }
