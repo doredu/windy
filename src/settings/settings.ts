@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getUpdateStatus, checkForUpdates, installUpdate, type UpdateStatusDto } from "../shared/bindings.ts";
 
 interface SettingsDto {
   max_items: number | null;
@@ -11,6 +12,9 @@ const retentionEl = document.getElementById("retentionDays") as HTMLInputElement
 const autostartEl = document.getElementById("startWithWindows") as HTMLInputElement;
 const form = document.getElementById("form") as HTMLFormElement;
 const status = document.getElementById("status")!;
+const updateBannerEl = document.getElementById("updateBanner")!;
+const updateTextEl = document.getElementById("updateText")!;
+const updateActionEl = document.getElementById("updateAction") as HTMLButtonElement;
 
 async function load() {
   const settings = await invoke<SettingsDto>("get_settings");
@@ -32,4 +36,46 @@ form.addEventListener("submit", async (e) => {
   setTimeout(() => status.classList.remove("visible"), 1500);
 });
 
+function renderUpdateStatus(status: UpdateStatusDto) {
+  updateBannerEl.classList.remove("error");
+  if (status.available) {
+    updateTextEl.textContent = `Update available: v${status.version}`;
+    updateActionEl.textContent = "Update";
+    updateActionEl.onclick = installNow;
+    updateBannerEl.classList.remove("hidden");
+  } else {
+    updateTextEl.textContent = "Up to date";
+    updateActionEl.textContent = "Check for updates";
+    updateActionEl.onclick = manualCheck;
+    updateBannerEl.classList.remove("hidden");
+  }
+}
+
+async function manualCheck() {
+  updateActionEl.disabled = true;
+  const status = await checkForUpdates();
+  updateActionEl.disabled = false;
+  renderUpdateStatus(status);
+}
+
+async function installNow() {
+  updateActionEl.disabled = true;
+  updateActionEl.textContent = "Updating…";
+  try {
+    await installUpdate();
+  } catch {
+    updateBannerEl.classList.add("error");
+    updateTextEl.textContent = "Update failed — try again later";
+    updateActionEl.textContent = "Retry";
+    updateActionEl.disabled = false;
+    updateActionEl.onclick = installNow;
+  }
+}
+
+async function loadUpdateStatus() {
+  const status = await getUpdateStatus();
+  renderUpdateStatus(status);
+}
+
 load();
+loadUpdateStatus();

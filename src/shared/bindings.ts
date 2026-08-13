@@ -19,11 +19,20 @@ export interface SettingsDto {
   start_with_windows: boolean;
 }
 
+export interface UpdateStatusDto {
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+}
+
 export const getHistory = () => invoke<HistoryItemDto[]>("get_history");
 export const selectItem = (id: number) => invoke<void>("select_item", { id });
 export const deleteItem = (id: number) => invoke<void>("delete_item", { id });
 export const getSettings = () => invoke<SettingsDto>("get_settings");
 export const setSettings = (settings: SettingsDto) => invoke<void>("set_settings", { settings });
+export const getUpdateStatus = () => invoke<UpdateStatusDto>("get_update_status");
+export const checkForUpdates = () => invoke<UpdateStatusDto>("check_for_updates");
+export const installUpdate = () => invoke<void>("install_update");
 
 export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
   listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
