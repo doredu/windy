@@ -122,7 +122,7 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         });
     }
 
-    if let Ok(html) = retry(|| clipboard.get().html()) {
+    if let Ok(html) = clipboard.get().html() {
         if !html.trim().is_empty() {
             let truncated_html = truncate_to_byte_cap(&html, TEXT_CAP_BYTES);
             let alt = match retry(|| clipboard.get_text()) {

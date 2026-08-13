@@ -44,6 +44,49 @@ mod tests {
     }
 
     #[test]
+    fn richtext_dedup_bump_refreshes_stale_content() {
+        // richtext's dedup key is derived only from the plain-text alt, not
+        // the HTML content, so two captures with different HTML but the same
+        // alt collide on the same dedup key. A bump must still refresh the
+        // row's content -- otherwise selecting the row later pastes stale
+        // formatting instead of what was just copied.
+        let store = mem_store();
+        let id1 = store
+            .capture(NewItem {
+                kind: "richtext".into(),
+                content: Some("<a>v1</a>".into()),
+                content_alt: Some("v1".into()),
+                image_path: None,
+                thumb_path: None,
+                preview: "v1".into(),
+                dedup_source: "richtext:v1".into(),
+            })
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let id2 = store
+            .capture(NewItem {
+                kind: "richtext".into(),
+                content: Some("<b>v1</b>".into()),
+                content_alt: Some("v1".into()),
+                image_path: None,
+                thumb_path: None,
+                preview: "v1".into(),
+                dedup_source: "richtext:v1".into(),
+            })
+            .unwrap();
+
+        assert_eq!(id1, id2, "same dedup_source must reuse the row");
+        let history = store.get_history().unwrap();
+        assert_eq!(history.len(), 1, "no duplicate row created");
+        assert_eq!(
+            history[0].content.as_deref(),
+            Some("<b>v1</b>"),
+            "bump must refresh content, not leave the stale first-copy HTML"
+        );
+    }
+
+    #[test]
     fn capture_round_trips_content_alt_and_thumb_path() {
         let store = mem_store();
         store
@@ -278,8 +321,8 @@ impl HistoryStore {
 
         let id = if let Some(id) = existing {
             self.conn.execute(
-                "UPDATE items SET created_at = ?1 WHERE id = ?2",
-                params![now_ms(), id],
+                "UPDATE items SET created_at = ?1, content = ?2, content_alt = ?3, preview = ?4 WHERE id = ?5",
+                params![now_ms(), item.content, item.content_alt, item.preview, id],
             )?;
             id
         } else {
