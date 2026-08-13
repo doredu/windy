@@ -168,6 +168,10 @@ mod tests {
         let store = mem_store();
         assert_eq!(store.get_setting("max_items").unwrap(), Some("200".into()));
         assert_eq!(store.get_setting("retention_days").unwrap(), Some("30".into()));
+        assert_eq!(store.get_setting("hotkey").unwrap(), Some("Ctrl+Alt+V".into()));
+        assert_eq!(store.get_setting("popup_opacity").unwrap(), Some("0.9".into()));
+        assert_eq!(store.get_setting("popup_bg_color").unwrap(), Some("#1e1e22".into()));
+        assert_eq!(store.get_setting("popup_accent_color").unwrap(), Some("#ffffff".into()));
     }
 
     #[test]
@@ -248,6 +252,84 @@ mod tests {
     }
 
     #[test]
+    fn repeat_copy_increments_copy_count_and_keeps_first_copied_at() {
+        let store = mem_store();
+        store.capture(text_item("a")).unwrap();
+        let first_seen = store.get_history().unwrap()[0].first_copied_at;
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("a")).unwrap();
+        let history = store.get_history().unwrap();
+        assert_eq!(history[0].copy_count, 2);
+        assert_eq!(history[0].first_copied_at, first_seen, "first_copied_at must not change on a bump");
+        assert!(history[0].created_at > first_seen, "created_at (last copied) must advance on a bump");
+    }
+
+    #[test]
+    fn get_history_sorted_by_most_copied() {
+        let store = mem_store();
+        store.capture(text_item("a")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("b")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("a")).unwrap();
+        store.capture(text_item("a")).unwrap();
+        let history = store.get_history_sorted(&SortMode::MostCopied).unwrap();
+        assert_eq!(history[0].content.as_deref(), Some("a"));
+        assert_eq!(history[0].copy_count, 3);
+    }
+
+    #[test]
+    fn get_history_sorted_by_first_copied() {
+        let store = mem_store();
+        store.capture(text_item("a")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("b")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        // Bump "a" so it's most-recently-copied but not first-copied.
+        store.capture(text_item("a")).unwrap();
+        let by_first = store.get_history_sorted(&SortMode::FirstCopied).unwrap();
+        assert_eq!(by_first[0].content.as_deref(), Some("b"), "b's first_copied_at is newer than a's, even though a was bumped most recently");
+    }
+
+    #[test]
+    fn clear_all_removes_every_row_and_returns_image_paths() {
+        let store = mem_store();
+        let dir = std::env::temp_dir().join(format!("cm-clearall-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let full = dir.join("a.png");
+        std::fs::write(&full, b"a").unwrap();
+        store.capture(text_item("a")).unwrap();
+        store
+            .capture(NewItem {
+                kind: "image".into(),
+                content: None,
+                content_alt: None,
+                image_path: Some(full.to_string_lossy().into()),
+                thumb_path: None,
+                preview: "img".into(),
+                dedup_source: "image:a".into(),
+            })
+            .unwrap();
+        let mut paths = store.clear_all().unwrap();
+        paths.sort();
+        assert_eq!(paths, vec![full.to_string_lossy().to_string()]);
+        assert_eq!(store.get_history().unwrap().len(), 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn open_seeds_new_default_settings_on_a_fresh_db() {
+        let store = mem_store();
+        assert_eq!(store.get_setting("auto_check_updates").unwrap(), Some("true".into()));
+        assert_eq!(store.get_setting("sort_mode").unwrap(), Some("last_copied".into()));
+        assert_eq!(store.get_setting("capture_types").unwrap(), Some("text,image,files,richtext".into()));
+        assert_eq!(store.get_setting("popup_position").unwrap(), Some("cursor".into()));
+        assert_eq!(store.get_setting("popup_pin").unwrap(), Some("bottom".into()));
+        assert_eq!(store.get_setting("clear_history_on_quit").unwrap(), Some("false".into()));
+        assert_eq!(store.get_setting("clear_clipboard_on_quit").unwrap(), Some("false".into()));
+    }
+
+    #[test]
     fn prune_deletes_image_and_thumbnail_files_for_evicted_rows() {
         let store = mem_store();
         store.set_setting("max_items", "1").unwrap();
@@ -302,6 +384,37 @@ pub struct HistoryItem {
     pub thumb_path: Option<String>,
     pub preview: String,
     pub created_at: i64,
+    // Populated from the DB and used by SQL ORDER BY (SortMode::order_by) --
+    // not read as Rust fields elsewhere, hence the otherwise-unused warning.
+    #[allow(dead_code)]
+    pub first_copied_at: i64,
+    #[allow(dead_code)]
+    pub copy_count: i64,
+}
+
+/// How `get_history` orders rows. Mirrors the `sort_mode` setting value.
+pub enum SortMode {
+    LastCopied,
+    FirstCopied,
+    MostCopied,
+}
+
+impl SortMode {
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "first_copied" => Self::FirstCopied,
+            "most_copied" => Self::MostCopied,
+            _ => Self::LastCopied,
+        }
+    }
+
+    fn order_by(&self) -> &'static str {
+        match self {
+            Self::LastCopied => "created_at DESC",
+            Self::FirstCopied => "first_copied_at DESC",
+            Self::MostCopied => "copy_count DESC, created_at DESC",
+        }
+    }
 }
 
 pub struct NewItem {
@@ -352,6 +465,15 @@ impl HistoryStore {
         )?;
         Self::migrate_add_column(&conn, "content_alt", "TEXT");
         Self::migrate_add_column(&conn, "thumb_path", "TEXT");
+        Self::migrate_add_column(&conn, "first_copied_at", "INTEGER");
+        Self::migrate_add_column(&conn, "copy_count", "INTEGER");
+        // Backfill rows from before first_copied_at/copy_count existed so
+        // sorting by them is meaningful instead of every old row tying at 0.
+        conn.execute(
+            "UPDATE items SET first_copied_at = created_at WHERE first_copied_at IS NULL",
+            [],
+        )?;
+        conn.execute("UPDATE items SET copy_count = 1 WHERE copy_count IS NULL", [])?;
         let store = Self { conn };
         store.seed_default_settings()?;
         Ok(store)
@@ -379,7 +501,61 @@ impl HistoryStore {
         if self.get_setting("retention_days")?.is_none() {
             self.set_setting("retention_days", "30")?;
         }
+        if self.get_setting("hotkey")?.is_none() {
+            self.set_setting("hotkey", "Ctrl+Alt+V")?;
+        }
+        // Defaults chosen to reproduce the popup's previous hardcoded look
+        // (`rgba(30,30,34,0.9)` background, `rgba(255,255,255,0.08)` hover)
+        // exactly, so unconfigured installs are visually unchanged.
+        if self.get_setting("popup_opacity")?.is_none() {
+            self.set_setting("popup_opacity", "0.9")?;
+        }
+        if self.get_setting("popup_bg_color")?.is_none() {
+            self.set_setting("popup_bg_color", "#1e1e22")?;
+        }
+        if self.get_setting("popup_accent_color")?.is_none() {
+            self.set_setting("popup_accent_color", "#ffffff")?;
+        }
+        if self.get_setting("auto_check_updates")?.is_none() {
+            self.set_setting("auto_check_updates", "true")?;
+        }
+        if self.get_setting("sort_mode")?.is_none() {
+            self.set_setting("sort_mode", "last_copied")?;
+        }
+        if self.get_setting("capture_types")?.is_none() {
+            self.set_setting("capture_types", "text,image,files,richtext")?;
+        }
+        if self.get_setting("popup_position")?.is_none() {
+            self.set_setting("popup_position", "cursor")?;
+        }
+        if self.get_setting("popup_pin")?.is_none() {
+            self.set_setting("popup_pin", "bottom")?;
+        }
+        if self.get_setting("clear_history_on_quit")?.is_none() {
+            self.set_setting("clear_history_on_quit", "false")?;
+        }
+        if self.get_setting("clear_clipboard_on_quit")?.is_none() {
+            self.set_setting("clear_clipboard_on_quit", "false")?;
+        }
         Ok(())
+    }
+
+    /// Deletes every history row and returns the on-disk paths (images and
+    /// thumbnails) that belonged to them, so the caller can remove those
+    /// files too. Used by the "clear history on quit" setting.
+    pub fn clear_all(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT image_path, thumb_path FROM items")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        let mut paths = Vec::new();
+        for row in rows {
+            let (image_path, thumb_path) = row?;
+            paths.extend(image_path);
+            paths.extend(thumb_path);
+        }
+        self.conn.execute("DELETE FROM items", [])?;
+        Ok(paths)
     }
 
     pub fn capture(&self, item: NewItem) -> rusqlite::Result<i64> {
@@ -395,14 +571,14 @@ impl HistoryStore {
 
         let id = if let Some(id) = existing {
             self.conn.execute(
-                "UPDATE items SET created_at = ?1, content = ?2, content_alt = ?3, preview = ?4 WHERE id = ?5",
+                "UPDATE items SET created_at = ?1, content = ?2, content_alt = ?3, preview = ?4, copy_count = copy_count + 1 WHERE id = ?5",
                 params![now_ms(), item.content, item.content_alt, item.preview, id],
             )?;
             id
         } else {
             self.conn.execute(
-                "INSERT INTO items (kind, content, content_alt, image_path, thumb_path, preview, dedup_key, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO items (kind, content, content_alt, image_path, thumb_path, preview, dedup_key, created_at, first_copied_at, copy_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 1)",
                 params![
                     item.kind,
                     item.content,
@@ -422,10 +598,19 @@ impl HistoryStore {
     }
 
     pub fn get_history(&self) -> rusqlite::Result<Vec<HistoryItem>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at
-             FROM items ORDER BY created_at DESC",
-        )?;
+        let mode = self
+            .get_setting("sort_mode")?
+            .map(|v| SortMode::parse(&v))
+            .unwrap_or(SortMode::LastCopied);
+        self.get_history_sorted(&mode)
+    }
+
+    pub fn get_history_sorted(&self, mode: &SortMode) -> rusqlite::Result<Vec<HistoryItem>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at, first_copied_at, copy_count
+             FROM items ORDER BY {}",
+            mode.order_by()
+        ))?;
         let rows = stmt.query_map([], |row| {
             Ok(HistoryItem {
                 id: row.get(0)?,
@@ -436,6 +621,8 @@ impl HistoryStore {
                 thumb_path: row.get(5)?,
                 preview: row.get(6)?,
                 created_at: row.get(7)?,
+                first_copied_at: row.get(8)?,
+                copy_count: row.get(9)?,
             })
         })?;
         rows.collect()

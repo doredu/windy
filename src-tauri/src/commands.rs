@@ -6,7 +6,7 @@ use crate::store::HistoryStore;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, PoisonError};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize)]
 pub struct HistoryItemDto {
@@ -23,6 +23,17 @@ pub struct SettingsDto {
     pub max_items: Option<i64>,
     pub retention_days: Option<i64>,
     pub start_with_windows: bool,
+    pub hotkey: String,
+    pub auto_check_updates: bool,
+    pub sort_mode: String,
+    pub capture_types: Vec<String>,
+    pub popup_opacity: f64,
+    pub popup_bg_color: String,
+    pub popup_accent_color: String,
+    pub popup_position: String,
+    pub popup_pin: String,
+    pub clear_history_on_quit: bool,
+    pub clear_clipboard_on_quit: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -87,11 +98,53 @@ pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
             .map_err(|e| e.to_string())?
             .map(|v| v == "true")
             .unwrap_or(false),
+        hotkey: s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into()),
+        auto_check_updates: s
+            .get_setting("auto_check_updates")
+            .map_err(|e| e.to_string())?
+            .map(|v| v == "true")
+            .unwrap_or(true),
+        sort_mode: s.get_setting("sort_mode").map_err(|e| e.to_string())?.unwrap_or_else(|| "last_copied".into()),
+        capture_types: s
+            .get_setting("capture_types")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| "text,image,files,richtext".into())
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        popup_opacity: s
+            .get_setting("popup_opacity")
+            .map_err(|e| e.to_string())?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.9),
+        popup_bg_color: s.get_setting("popup_bg_color").map_err(|e| e.to_string())?.unwrap_or_else(|| "#1e1e22".into()),
+        popup_accent_color: s
+            .get_setting("popup_accent_color")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| "#ffffff".into()),
+        popup_position: s.get_setting("popup_position").map_err(|e| e.to_string())?.unwrap_or_else(|| "cursor".into()),
+        popup_pin: s.get_setting("popup_pin").map_err(|e| e.to_string())?.unwrap_or_else(|| "bottom".into()),
+        clear_history_on_quit: s
+            .get_setting("clear_history_on_quit")
+            .map_err(|e| e.to_string())?
+            .map(|v| v == "true")
+            .unwrap_or(false),
+        clear_clipboard_on_quit: s
+            .get_setting("clear_clipboard_on_quit")
+            .map_err(|e| e.to_string())?
+            .map(|v| v == "true")
+            .unwrap_or(false),
     })
 }
 
 #[tauri::command]
-pub fn set_settings(settings: SettingsDto, store: State<Store>, app: AppHandle) -> Result<(), String> {
+pub fn set_settings(
+    settings: SettingsDto,
+    store: State<Store>,
+    hotkey: State<crate::watcher::HotkeyHandle>,
+    app: AppHandle,
+) -> Result<(), String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(v) = settings.max_items {
         s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?;
@@ -100,6 +153,28 @@ pub fn set_settings(settings: SettingsDto, store: State<Store>, app: AppHandle) 
         s.set_setting("retention_days", &v.to_string()).map_err(|e| e.to_string())?;
     }
     s.set_setting("start_with_windows", if settings.start_with_windows { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+
+    // Applied to the live hotkey listener thread first -- if the combo is
+    // invalid or already claimed by another app, bail before persisting it
+    // so settings never disagree with what's actually registered.
+    hotkey.rebind(settings.hotkey.clone())?;
+    s.set_setting("hotkey", &settings.hotkey).map_err(|e| e.to_string())?;
+
+    s.set_setting("auto_check_updates", if settings.auto_check_updates { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+    s.set_setting("sort_mode", &settings.sort_mode).map_err(|e| e.to_string())?;
+    s.set_setting("capture_types", &settings.capture_types.join(",")).map_err(|e| e.to_string())?;
+
+    s.set_setting("popup_opacity", &settings.popup_opacity.to_string()).map_err(|e| e.to_string())?;
+    s.set_setting("popup_bg_color", &settings.popup_bg_color).map_err(|e| e.to_string())?;
+    s.set_setting("popup_accent_color", &settings.popup_accent_color).map_err(|e| e.to_string())?;
+    s.set_setting("popup_position", &settings.popup_position).map_err(|e| e.to_string())?;
+    s.set_setting("popup_pin", &settings.popup_pin).map_err(|e| e.to_string())?;
+
+    s.set_setting("clear_history_on_quit", if settings.clear_history_on_quit { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+    s.set_setting("clear_clipboard_on_quit", if settings.clear_clipboard_on_quit { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
     drop(s);
 
@@ -110,6 +185,8 @@ pub fn set_settings(settings: SettingsDto, store: State<Store>, app: AppHandle) 
     } else {
         let _ = autostart.disable();
     }
+
+    let _ = app.emit("settings-updated", ());
     Ok(())
 }
 
@@ -242,6 +319,8 @@ mod tests {
             thumb_path: Some(thumb_path.to_string_lossy().to_string()),
             preview: "Image (10x10)".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         let dto = history_item_to_dto(item);
         let expected = format!(
@@ -263,6 +342,8 @@ mod tests {
             thumb_path: None,
             preview: "hi".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         let dto = history_item_to_dto(item);
         assert!(dto.thumbnail.is_none());
@@ -279,6 +360,8 @@ mod tests {
             thumb_path: None,
             preview: "hello".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("5 B"));
     }
@@ -294,6 +377,8 @@ mod tests {
             thumb_path: None,
             preview: "x".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("2.0 KB"));
     }
@@ -314,6 +399,8 @@ mod tests {
             thumb_path: None,
             preview: "Image (10x10)".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("19 B"));
         std::fs::remove_dir_all(&dir).ok();
@@ -330,6 +417,8 @@ mod tests {
             thumb_path: None,
             preview: "3 files".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("3 files"));
     }

@@ -44,18 +44,29 @@ fn main() {
                 let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
                 store::HistoryStore::open(&db_path)
             })?;
+            let initial_hotkey = opened.get_setting("hotkey")?.unwrap_or_else(|| "Ctrl+Alt+V".into());
             let store = std::sync::Arc::new(std::sync::Mutex::new(opened));
-            watcher::spawn(app.handle().clone(), store.clone());
+            let hotkey_handle = watcher::spawn(app.handle().clone(), store.clone(), initial_hotkey);
+            app.manage(hotkey_handle);
             app.manage(store);
 
             app.manage(commands::UpdateState::default());
             {
-                let app_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    use tauri::Manager;
-                    let state = app_handle.state::<commands::UpdateState>();
-                    let _ = commands::check_for_updates(app_handle.clone(), state).await;
-                });
+                let auto_check = app
+                    .state::<commands::Store>()
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_setting("auto_check_updates")?
+                    .map(|v| v == "true")
+                    .unwrap_or(true);
+                if auto_check {
+                    let app_handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        use tauri::Manager;
+                        let state = app_handle.state::<commands::UpdateState>();
+                        let _ = commands::check_for_updates(app_handle.clone(), state).await;
+                    });
+                }
             }
 
             if let Some(settings_window) = app.get_webview_window("settings") {
@@ -92,7 +103,27 @@ fn main() {
                             eprintln!("tray: settings window not implemented yet (Task 9)");
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        use tauri::Manager;
+                        let store = app.state::<commands::Store>();
+                        let s = store.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let clear_history = s.get_setting("clear_history_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+                        let clear_clipboard = s.get_setting("clear_clipboard_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+                        if clear_history {
+                            if let Ok(paths) = s.clear_all() {
+                                for path in paths {
+                                    let _ = std::fs::remove_file(path);
+                                }
+                            }
+                        }
+                        drop(s);
+                        if clear_clipboard {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                let _ = clipboard.clear();
+                            }
+                        }
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {

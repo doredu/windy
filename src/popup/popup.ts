@@ -4,13 +4,16 @@
 
 import {
   getHistory,
+  getSettings,
   selectItem,
   deleteItem,
   onTogglePopup,
   onHistoryUpdated,
+  onSettingsUpdated,
   type HistoryItemDto,
 } from "../shared/bindings.ts";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { hexToRgba } from "../shared/color.ts";
 
 const FOLDER_ICON_SVG =
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M1.5 3A1.5 1.5 0 0 1 3 1.5h3.172a1.5 1.5 0 0 1 1.06.44l1.329 1.328A.5.5 0 0 0 8.914 3H13A1.5 1.5 0 0 1 14.5 4.5v8A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Z"/></svg>`;
@@ -35,17 +38,31 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
 }
 
 const listEl = document.getElementById("list")!;
+const searchEl = document.getElementById("search") as HTMLInputElement;
 let items: HistoryItemDto[] = [];
+let filtered: HistoryItemDto[] = [];
+let selectedIndex = 0;
 
 document.getElementById("close")!.addEventListener("click", async () => {
   await getCurrentWindow().hide();
 });
 
+function applyFilter() {
+  const query = searchEl.value.trim().toLowerCase();
+  filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
+  selectedIndex = 0;
+  render();
+}
+
+searchEl.addEventListener("input", applyFilter);
+
 function render() {
   listEl.innerHTML = "";
-  items.forEach((item, i) => {
+  if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
+  if (selectedIndex < 0) selectedIndex = 0;
+  filtered.forEach((item, i) => {
     const row = document.createElement("div");
-    row.className = "row";
+    row.className = i === selectedIndex ? "row active" : "row";
 
     const badge = document.createElement("span");
     badge.className = "badge";
@@ -87,23 +104,67 @@ function render() {
 
     listEl.appendChild(row);
   });
+  listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
 }
 
 async function refresh() {
   items = await getHistory();
-  render();
+  applyFilter();
+}
+
+async function applyTheme() {
+  const settings = await getSettings();
+  const root = document.documentElement.style;
+  root.setProperty("--popup-bg", hexToRgba(settings.popup_bg_color, settings.popup_opacity));
+  // Fixed alpha, independent of the opacity slider (which only controls the
+  // popup background) -- matches the original hardcoded hover look
+  // (`rgba(255,255,255,0.08)`) when the accent color is left at its default.
+  root.setProperty("--popup-accent-bg", hexToRgba(settings.popup_accent_color, 0.08));
+  root.setProperty("--popup-accent-color", settings.popup_accent_color);
 }
 
 // Registered once at module load — not per-render — so we never accumulate
 // duplicate listeners across refreshes.
 document.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") {
+    // First Escape clears an active search (and keeps the popup open so the
+    // user can keep browsing); only a second Escape (or Escape with no
+    // search text) closes the popup.
+    if (document.activeElement === searchEl && searchEl.value) {
+      searchEl.value = "";
+      applyFilter();
+      return;
+    }
     await getCurrentWindow().hide();
     return;
   }
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (filtered.length === 0) return;
+    selectedIndex = (selectedIndex + 1) % filtered.length;
+    render();
+    return;
+  }
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (filtered.length === 0) return;
+    selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
+    render();
+    return;
+  }
+  if (e.key === "Enter") {
+    if (!filtered[selectedIndex]) return;
+    await selectItem(filtered[selectedIndex].id);
+    await getCurrentWindow().hide();
+    return;
+  }
+  // Digit shortcuts only select a row when the search box isn't focused --
+  // otherwise typing "1" while searching would select an item instead of
+  // filtering.
+  if (document.activeElement === searchEl) return;
   const n = Number(e.key);
-  if (Number.isInteger(n) && n >= 1 && n <= 9 && items[n - 1]) {
-    await selectItem(items[n - 1].id);
+  if (Number.isInteger(n) && n >= 1 && n <= 9 && filtered[n - 1]) {
+    await selectItem(filtered[n - 1].id);
     await getCurrentWindow().hide();
   }
 });
@@ -122,14 +183,19 @@ onTogglePopup(async (pos) => {
     await win.hide();
     return;
   }
+  selectedIndex = 0;
+  searchEl.value = "";
   await refresh();
   // `pos` is the already-clamped (screen-edge-aware) position computed in
   // Rust (position.rs, Task 4) — apply it directly, no re-clamping here.
   await win.setPosition(new PhysicalPosition(pos.x, pos.y));
   await win.show();
   await win.setFocus();
+  searchEl.focus();
 });
 
 onHistoryUpdated(refresh);
+onSettingsUpdated(applyTheme);
 
+applyTheme();
 refresh();
