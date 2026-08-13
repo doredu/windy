@@ -71,7 +71,9 @@ Manifest URL:
 ## Signing & CI
 
 Add `.github/workflows/release.yml`:
-- Trigger: push of a `v*` tag.
+- Trigger: manual (`workflow_dispatch`, run from the Actions tab with a
+  `tag` input) — never fires automatically off a tag push, so ad-hoc/test
+  tags can never accidentally kick off a real build.
 - Runs on `windows-latest`.
 - Uses `tauri-apps/tauri-action` to run `deno task build` (frontend) then
   `tauri build`, producing signed msi/nsis installers and a `latest.json`

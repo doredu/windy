@@ -1,9 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.3.3)"
+        required: true
 
 jobs:
   release:
@@ -28,8 +30,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Windy ${{ github.ref_name }}"
+          tagName: ${{ inputs.tag }}
+          releaseName: "Windy ${{ inputs.tag }}"
           releaseDraft: true
           prerelease: false
           projectPath: src-tauri
