@@ -23,29 +23,82 @@
 // already live in `crate::win32` (built in Task 5) and are reused here, not
 // redefined.
 
-use crate::position::clamp_popup_position;
+use crate::position::{compute_popup_position, PopupPin, PopupPositionMode};
 use crate::store::HistoryStore;
 use std::cell::RefCell;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
 use tauri::{AppHandle, Emitter, Manager};
 
+/// A pending rebind request handed to the hotkey thread: the new combo
+/// string plus a oneshot channel the thread uses to report success/failure
+/// back to whichever `tauri::command` requested the change.
+struct PendingRebind {
+    combo: String,
+    result_tx: mpsc::Sender<Result<(), String>>,
+}
+
+/// Lets other threads (i.e. the `set_settings` command handler) ask the
+/// dedicated hotkey thread to swap its registered combo. `RegisterHotKey`/
+/// `UnregisterHotKey` are thread-affine, so the actual re-registration must
+/// happen on `thread_id`'s own message loop -- this handle only queues the
+/// request (`pending`) and wakes that loop with a custom thread message.
+pub struct HotkeyHandle {
+    thread_id: u32,
+    pending: Arc<Mutex<Option<PendingRebind>>>,
+}
+
+impl HotkeyHandle {
+    /// Requests that the toggle hotkey be changed to `combo` (e.g.
+    /// `"Ctrl+Alt+V"`), blocking briefly until the hotkey thread confirms
+    /// the new registration succeeded (or reports why it didn't).
+    pub fn rebind(&self, combo: String) -> Result<(), String> {
+        let (result_tx, result_rx) = mpsc::channel();
+        *self.pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(PendingRebind { combo, result_tx });
+
+        unsafe {
+            use windows::Win32::Foundation::{LPARAM, WPARAM};
+            use windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
+            if PostThreadMessageW(self.thread_id, REBIND_HOTKEY_MSG, WPARAM(0), LPARAM(0)).is_err() {
+                return Err("hotkey thread is no longer running".into());
+            }
+        }
+
+        result_rx
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap_or_else(|_| Err("hotkey thread did not respond in time".into()))
+    }
+}
+
 /// Starts the two watcher threads:
-/// - a hotkey thread that registers Ctrl+Alt+V as a system-wide hotkey via
-///   `RegisterHotKey` and emits `"toggle-popup"` on each `WM_HOTKEY`;
+/// - a hotkey thread that registers `initial_hotkey` as a system-wide
+///   hotkey via `RegisterHotKey` and emits `"toggle-popup"` on each
+///   `WM_HOTKEY`; its registration can be changed later via the returned
+///   `HotkeyHandle`;
 /// - a clipboard-listener thread that registers a hidden message-only
 ///   window for `WM_CLIPBOARDUPDATE` and captures clipboard changes into
 ///   `store`, emitting `"history-updated"` after each successful capture.
-pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
-    // Hotkey thread: registers Ctrl+Alt+V and pumps a message loop to
-    // receive WM_HOTKEY. Owns the thread the hotkey is registered on --
-    // RegisterHotKey ties the registration to the calling thread's message
-    // queue, so this must stay a dedicated thread with its own loop.
-    {
+pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hotkey: String) -> HotkeyHandle {
+    let pending: Arc<Mutex<Option<PendingRebind>>> = Arc::new(Mutex::new(None));
+
+    // Hotkey thread: registers `initial_hotkey` and pumps a message loop to
+    // receive WM_HOTKEY (and rebind requests). Owns the thread the hotkey is
+    // registered on -- RegisterHotKey ties the registration to the calling
+    // thread's message queue, so this must stay a dedicated thread with its
+    // own loop.
+    let thread_id = {
         let app_handle = app_handle.clone();
+        let pending = pending.clone();
+        let store = store.clone();
+        let (thread_id_tx, thread_id_rx) = mpsc::channel();
         std::thread::spawn(move || unsafe {
-            run_hotkey_listener(app_handle);
+            run_hotkey_listener(app_handle, store, initial_hotkey, pending, thread_id_tx);
         });
-    }
+        // The hotkey thread reports its OS thread id as the first thing it
+        // does, before entering the message loop -- block briefly here so
+        // callers get back a `HotkeyHandle` that's immediately usable.
+        thread_id_rx.recv().unwrap_or(0)
+    };
 
     // Clipboard listener thread: hidden message-only window +
     // AddClipboardFormatListener.
@@ -54,6 +107,8 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
             run_clipboard_listener(app_handle, store);
         });
     }
+
+    HotkeyHandle { thread_id, pending }
 }
 
 /// tauri.conf.json's declared popup size, in *logical* pixels -- used only
@@ -114,21 +169,74 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
 /// `UnregisterHotKey` and matched against `WM_HOTKEY`'s wParam.
 const TOGGLE_HOTKEY_ID: i32 = 1;
 
-/// Registers Ctrl+Alt+V as a system-wide hotkey and pumps a message loop to
-/// receive `WM_HOTKEY` on the calling (dedicated) thread -- `RegisterHotKey`
-/// ties the registration to the calling thread's message queue, so this
-/// must run on its own thread for the lifetime of the app.
-unsafe fn run_hotkey_listener(app_handle: AppHandle) {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
-    };
+/// Custom thread message used to wake the hotkey thread's `GetMessageW`
+/// loop when a rebind is requested (a plain `Arc<Mutex<..>>` write alone
+/// wouldn't interrupt the blocking wait).
+const REBIND_HOTKEY_MSG: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+
+/// Parses a combo string like `"Ctrl+Alt+V"` into the `RegisterHotKey`
+/// modifier flags and virtual-key code. Requires at least one modifier
+/// (Ctrl/Alt/Shift/Win) plus exactly one trailing A-Z/0-9 key, matching what
+/// the settings UI's press-to-record field can produce.
+fn parse_hotkey(combo: &str) -> Result<(windows::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS, u32), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN};
+
+    let mut mods: u32 = MOD_NOREPEAT.0;
+    let mut vk: Option<u32> = None;
+
+    for part in combo.split('+').map(str::trim) {
+        if part.is_empty() {
+            continue;
+        }
+        match part.to_ascii_uppercase().as_str() {
+            "CTRL" | "CONTROL" => mods |= MOD_CONTROL.0,
+            "ALT" => mods |= MOD_ALT.0,
+            "SHIFT" => mods |= MOD_SHIFT.0,
+            "WIN" | "SUPER" | "META" => mods |= MOD_WIN.0,
+            key if key.len() == 1 && key.chars().next().unwrap().is_ascii_alphanumeric() => {
+                if vk.is_some() {
+                    return Err(format!("multiple keys in \"{combo}\" -- only one non-modifier key is supported"));
+                }
+                vk = Some(key.chars().next().unwrap() as u32);
+            }
+            other => return Err(format!("unsupported key \"{other}\" in \"{combo}\"")),
+        }
+    }
+
+    let vk = vk.ok_or_else(|| format!("\"{combo}\" has no key, only modifiers"))?;
+    if mods == MOD_NOREPEAT.0 {
+        return Err(format!("\"{combo}\" needs at least one modifier (Ctrl/Alt/Shift/Win)"));
+    }
+    Ok((HOT_KEY_MODIFIERS(mods), vk))
+}
+
+/// Registers `initial_hotkey` as a system-wide hotkey and pumps a message
+/// loop to receive `WM_HOTKEY` (and rebind requests posted via
+/// `HotkeyHandle::rebind`) on the calling (dedicated) thread --
+/// `RegisterHotKey` ties the registration to the calling thread's message
+/// queue, so this must run on its own thread for the lifetime of the app.
+unsafe fn run_hotkey_listener(
+    app_handle: AppHandle,
+    store: Arc<Mutex<HistoryStore>>,
+    initial_hotkey: String,
+    pending: Arc<Mutex<Option<PendingRebind>>>,
+    thread_id_tx: mpsc::Sender<u32>,
+) {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
     use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
-    const VK_V: u32 = 0x56;
-    let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_NOREPEAT.0);
+    let _ = thread_id_tx.send(GetCurrentThreadId());
 
-    if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, VK_V) {
-        eprintln!("watcher: RegisterHotKey failed, the Ctrl+Alt+V toggle is disabled: {e}");
+    let (mut modifiers, mut vk) = match parse_hotkey(&initial_hotkey) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("watcher: invalid stored hotkey \"{initial_hotkey}\" ({e}); the toggle is disabled");
+            return;
+        }
+    };
+    if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk) {
+        eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
         return;
     }
 
@@ -137,8 +245,41 @@ unsafe fn run_hotkey_listener(app_handle: AppHandle) {
         if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == TOGGLE_HOTKEY_ID {
             let cursor = crate::win32::cursor_position();
             let popup_size = popup_physical_size(&app_handle);
-            let (px, py) = clamp_popup_position(cursor, popup_size, monitor_bounds_at(cursor));
+            let screen = monitor_bounds_at(cursor);
+            let (mode, pin) = {
+                let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+                (
+                    PopupPositionMode::parse(&s.get_setting("popup_position").ok().flatten().unwrap_or_default()),
+                    PopupPin::parse(&s.get_setting("popup_pin").ok().flatten().unwrap_or_default()),
+                )
+            };
+            let foreground_window = crate::win32::foreground_window_rect();
+            let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
             let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
+        } else if msg.message == REBIND_HOTKEY_MSG {
+            let Some(PendingRebind { combo, result_tx }) = pending.lock().unwrap_or_else(PoisonError::into_inner).take() else {
+                continue;
+            };
+            let result = match parse_hotkey(&combo) {
+                Err(e) => Err(e),
+                Ok((new_modifiers, new_vk)) => {
+                    let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
+                    match RegisterHotKey(None, TOGGLE_HOTKEY_ID, new_modifiers, new_vk) {
+                        Ok(()) => {
+                            modifiers = new_modifiers;
+                            vk = new_vk;
+                            Ok(())
+                        }
+                        Err(e) => {
+                            // Best-effort: restore the previous combo so the
+                            // toggle isn't left completely unbound.
+                            let _ = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk);
+                            Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
+                        }
+                    }
+                }
+            };
+            let _ = result_tx.send(result);
         }
     }
     let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
@@ -146,6 +287,17 @@ unsafe fn run_hotkey_listener(app_handle: AppHandle) {
 
 thread_local! {
     static LISTENER_CTX: RefCell<Option<(AppHandle, Arc<Mutex<HistoryStore>>)>> = RefCell::new(None);
+}
+
+/// Whether `kind` (e.g. `"text"`/`"image"`/`"files"`/`"richtext"`) is
+/// currently enabled by the `capture_types` setting. Defaults to capturing
+/// everything if the setting is unset or empty (should not happen in
+/// practice -- `seed_default_settings` always seeds it).
+fn kind_is_captured(store: &HistoryStore, kind: &str) -> bool {
+    match store.get_setting("capture_types").ok().flatten() {
+        Some(types) if !types.is_empty() => types.split(',').any(|t| t == kind),
+        _ => true,
+    }
 }
 
 /// Registers a hidden message-only window and `AddClipboardFormatListener`
@@ -235,11 +387,12 @@ unsafe extern "system" fn listener_wndproc(
             LISTENER_CTX.with(|cell| {
                 if let Some((app_handle, store)) = cell.borrow().as_ref() {
                     if let Some(item) = crate::clipboard_io::capture_current_clipboard() {
-                        let captured = store
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .capture(item)
-                            .is_ok();
+                        let store = store.lock().unwrap_or_else(PoisonError::into_inner);
+                        if !kind_is_captured(&store, &item.kind) {
+                            return;
+                        }
+                        let captured = store.capture(item).is_ok();
+                        drop(store);
                         if captured {
                             let _ = app_handle.emit("history-updated", ());
                         }
@@ -253,4 +406,44 @@ unsafe extern "system" fn listener_wndproc(
         return windows::Win32::Foundation::LRESULT(0);
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT};
+
+    #[test]
+    fn parses_ctrl_alt_v() {
+        let (mods, vk) = parse_hotkey("Ctrl+Alt+V").unwrap();
+        assert_eq!(mods.0, MOD_CONTROL.0 | MOD_ALT.0 | MOD_NOREPEAT.0);
+        assert_eq!(vk, 'V' as u32);
+    }
+
+    #[test]
+    fn parses_lowercase_and_extra_whitespace() {
+        let (mods, vk) = parse_hotkey(" ctrl + shift + 5 ").unwrap();
+        assert_eq!(mods.0, MOD_CONTROL.0 | MOD_SHIFT.0 | MOD_NOREPEAT.0);
+        assert_eq!(vk, '5' as u32);
+    }
+
+    #[test]
+    fn rejects_combo_with_no_modifier() {
+        assert!(parse_hotkey("V").is_err());
+    }
+
+    #[test]
+    fn rejects_combo_with_no_key() {
+        assert!(parse_hotkey("Ctrl+Alt").is_err());
+    }
+
+    #[test]
+    fn rejects_combo_with_two_keys() {
+        assert!(parse_hotkey("Ctrl+V+B").is_err());
+    }
+
+    #[test]
+    fn rejects_unsupported_token() {
+        assert!(parse_hotkey("Ctrl+F1").is_err());
+    }
 }

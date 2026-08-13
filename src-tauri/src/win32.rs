@@ -45,6 +45,26 @@ pub fn cursor_position() -> (i32, i32) {
     (point.x, point.y)
 }
 
+/// Returns the bounds (left, top, width, height) of the current foreground
+/// window, in screen coordinates. Used for the "window center" popup
+/// position mode. Returns `None` if there's no foreground window or
+/// `GetWindowRect` fails (e.g. right after the desktop itself loses focus).
+pub fn foreground_window_rect() -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect};
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return None;
+        }
+        Some((rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top))
+    }
+}
+
 /// Checks whether the clipboard currently carries either of the two
 /// well-known opt-out markers apps (e.g. password managers) use to exclude
 /// their content from history tools:

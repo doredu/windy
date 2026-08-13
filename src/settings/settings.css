@@ -8,7 +8,37 @@ body {
   padding: 18px 20px;
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  margin-bottom: 16px;
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover { background: rgba(255, 255, 255, 0.06); color: #eee; }
+.tab:active { background: rgba(255, 255, 255, 0.06); }
+
+.tab.active {
+  color: #eee;
+  border-bottom-color: #4f8cff;
+}
+
 form { display: flex; flex-direction: column; gap: 14px; }
+
+.tab-panel { display: none; flex-direction: column; gap: 14px; }
+.tab-panel.active { display: flex; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 
@@ -32,6 +62,70 @@ input[type="number"]:hover { background: rgba(255, 255, 255, 0.09); }
 input[type="number"]:focus {
   border-color: #4f8cff;
   background: rgba(255, 255, 255, 0.09);
+}
+
+.hotkey-row { display: flex; gap: 8px; }
+
+input[type="text"]#hotkey {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #eee;
+  font-size: 13px;
+  padding: 6px 8px;
+  flex: 1;
+  box-sizing: border-box;
+  outline: none;
+}
+
+input[type="text"]#hotkey.recording {
+  border-color: #4f8cff;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hotkey-row button {
+  padding: 6px 12px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.hotkey-row button.recording { background: #e0524d; }
+.hotkey-row button.recording:hover { background: #eb716c; }
+
+.field-error {
+  font-size: 11px;
+  color: #ff8080;
+  min-height: 14px;
+}
+
+select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #eee;
+  font-size: 13px;
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+}
+
+select:hover { background: rgba(255, 255, 255, 0.09); }
+select:focus { border-color: #4f8cff; background: rgba(255, 255, 255, 0.09); }
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #4f8cff;
+}
+
+input[type="color"] {
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
 }
 
 .checkbox-field {

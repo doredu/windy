@@ -14,10 +14,26 @@ export interface HistoryItemDto {
   created_at: number;
 }
 
+export type SortMode = "last_copied" | "first_copied" | "most_copied";
+export type CaptureType = "text" | "image" | "files" | "richtext";
+export type PopupPosition = "cursor" | "window_center" | "screen_center" | "bottom_right";
+export type PopupPin = "top" | "bottom";
+
 export interface SettingsDto {
   max_items: number | null;
   retention_days: number | null;
   start_with_windows: boolean;
+  hotkey: string;
+  auto_check_updates: boolean;
+  sort_mode: SortMode;
+  capture_types: CaptureType[];
+  popup_opacity: number;
+  popup_bg_color: string;
+  popup_accent_color: string;
+  popup_position: PopupPosition;
+  popup_pin: PopupPin;
+  clear_history_on_quit: boolean;
+  clear_clipboard_on_quit: boolean;
 }
 
 export interface UpdateStatusDto {
@@ -38,5 +54,6 @@ export const installUpdate = () => invoke<void>("install_update");
 export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
   listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
 export const onHistoryUpdated = (cb: () => void) => listen("history-updated", () => cb());
+export const onSettingsUpdated = (cb: () => void) => listen("settings-updated", () => cb());
 export const onWindowFocusChanged = (cb: (focused: boolean) => void) =>
   getCurrentWindow().onFocusChanged(({ payload }) => cb(payload));

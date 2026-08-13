@@ -235,6 +235,8 @@ mod tests {
             thumb_path: None,
             preview: "clipboard round trip".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
         let captured = capture_current_clipboard().expect("expected a captured item");
@@ -253,6 +255,8 @@ mod tests {
             thumb_path: None,
             preview: String::new(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         }).unwrap();
         let captured = capture_current_clipboard().expect("expected a captured item");
         assert!(captured.content.unwrap().len() <= 200_000);
@@ -314,6 +318,8 @@ mod tests {
             thumb_path: None,
             preview: String::new(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         }).unwrap();
         let captured = capture_current_clipboard().expect("expected a captured item");
         let content = captured.content.unwrap();
@@ -376,6 +382,8 @@ mod tests {
             thumb_path: None,
             preview: "styled".into(),
             created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
         let captured = capture_current_clipboard().expect("expected a richtext capture");

@@ -6,19 +6,100 @@
     <span id="updateText"></span>
     <button type="button" id="updateAction"></button>
   </div>
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="general" role="tab">General</button>
+    <button type="button" class="tab" data-tab="storage" role="tab">Storage</button>
+    <button type="button" class="tab" data-tab="appearance" role="tab">Appearance</button>
+    <button type="button" class="tab" data-tab="advanced" role="tab">Advanced</button>
+  </div>
   <form id="form">
-    <div class="field">
-      <label for="maxItems">Max items</label>
-      <input id="maxItems" type="number" min="1">
-    </div>
-    <div class="field">
-      <label for="retentionDays">Retention (days)</label>
-      <input id="retentionDays" type="number" min="1">
-    </div>
-    <label class="checkbox-field">
-      <input id="startWithWindows" type="checkbox">
-      Start with Windows
-    </label>
+    <section class="tab-panel active" data-panel="general">
+      <label class="checkbox-field">
+        <input id="startWithWindows" type="checkbox">
+        Start with Windows
+      </label>
+      <div class="field">
+        <label for="hotkey">Toggle hotkey</label>
+        <div class="hotkey-row">
+          <input id="hotkey" type="text" readonly placeholder="Click Record and press keys">
+          <button type="button" id="hotkeyRecord">Record</button>
+        </div>
+        <span id="hotkeyError" class="field-error"></span>
+      </div>
+      <label class="checkbox-field">
+        <input id="autoCheckUpdates" type="checkbox">
+        Automatically check for updates
+      </label>
+    </section>
+
+    <section class="tab-panel" data-panel="storage">
+      <div class="field">
+        <label for="maxItems">Max items</label>
+        <input id="maxItems" type="number" min="1">
+      </div>
+      <div class="field">
+        <label for="retentionDays">Retention (days)</label>
+        <input id="retentionDays" type="number" min="1">
+      </div>
+      <div class="field">
+        <label for="sortMode">Sort by</label>
+        <select id="sortMode">
+          <option value="last_copied">Time of last copy</option>
+          <option value="first_copied">Time of first copy</option>
+          <option value="most_copied">Number of copies</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Save to history</label>
+        <label class="checkbox-field"><input id="captureText" type="checkbox"> Text</label>
+        <label class="checkbox-field"><input id="captureImage" type="checkbox"> Images</label>
+        <label class="checkbox-field"><input id="captureFiles" type="checkbox"> Files</label>
+        <label class="checkbox-field"><input id="captureRichtext" type="checkbox"> Rich text</label>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="appearance">
+      <div class="field">
+        <label for="popupOpacity">Popup opacity</label>
+        <input id="popupOpacity" type="range" min="30" max="100" step="1">
+      </div>
+      <div class="field">
+        <label for="popupBgColor">Popup background color</label>
+        <input id="popupBgColor" type="color">
+      </div>
+      <div class="field">
+        <label for="popupAccentColor">Popup accent color</label>
+        <input id="popupAccentColor" type="color">
+      </div>
+      <div class="field">
+        <label for="popupPosition">Position</label>
+        <select id="popupPosition">
+          <option value="cursor">At cursor</option>
+          <option value="window_center">Center of active window</option>
+          <option value="screen_center">Center of screen</option>
+          <option value="bottom_right">Bottom-right corner</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="popupPin">Pin</label>
+        <select id="popupPin">
+          <option value="bottom">Below position</option>
+          <option value="top">Above position</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="advanced">
+      <label class="checkbox-field">
+        <input id="clearHistoryOnQuit" type="checkbox">
+        Clear history on quit
+      </label>
+      <label class="checkbox-field">
+        <input id="clearClipboardOnQuit" type="checkbox">
+        Clear system clipboard too
+      </label>
+    </section>
+
     <div class="actions">
       <button type="submit">Save</button>
       <span id="status">Saved</span>
