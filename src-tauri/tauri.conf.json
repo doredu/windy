@@ -24,6 +24,15 @@
         "skipTaskbar": true,
         "visible": false,
         "shadow": false
+      },
+      {
+        "label": "settings",
+        "title": "Clipboard Manager Settings",
+        "url": "settings/index.html",
+        "width": 320,
+        "height": 220,
+        "resizable": false,
+        "visible": false
       }
     ],
     "security": {
