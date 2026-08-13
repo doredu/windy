@@ -59,7 +59,7 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
     }
 
     if let Ok(text) = clipboard.get_text() {
-        let truncated: String = text.chars().take(TEXT_CAP_BYTES).collect();
+        let truncated = truncate_to_byte_cap(&text, TEXT_CAP_BYTES);
         let preview: String = truncated.chars().take(120).collect();
         return Some(NewItem {
             kind: "text".into(),
@@ -71,6 +71,19 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
     }
 
     None
+}
+
+/// Truncates `text` to at most `cap_bytes` UTF-8 bytes, cutting only on a
+/// valid char boundary (never splitting a multi-byte character).
+fn truncate_to_byte_cap(text: &str, cap_bytes: usize) -> String {
+    if text.len() <= cap_bytes {
+        return text.to_string();
+    }
+    let mut end = cap_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
 }
 
 pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
@@ -129,5 +142,25 @@ mod tests {
         }).unwrap();
         let captured = capture_current_clipboard().expect("expected a captured item");
         assert!(captured.content.unwrap().len() <= 200_000);
+    }
+
+    #[test]
+    fn non_ascii_text_over_cap_is_truncated_by_bytes_not_chars() {
+        // '中' is 3 bytes in UTF-8. 100_000 repeats = 300_000 bytes, well
+        // over the 200_000-byte cap, but only 100_000 chars (under a
+        // chars()-based cap of 200_000), so a char-counting truncation would
+        // fail to cap this by bytes.
+        write_item_to_clipboard(&HistoryItem {
+            id: 1,
+            kind: "text".into(),
+            content: Some("中".repeat(100_000)),
+            image_path: None,
+            preview: String::new(),
+            created_at: 0,
+        }).unwrap();
+        let captured = capture_current_clipboard().expect("expected a captured item");
+        let content = captured.content.unwrap();
+        assert!(content.len() <= 200_000, "byte length {} exceeds cap", content.len());
+        assert!(std::str::from_utf8(content.as_bytes()).is_ok(), "truncation must not split a char");
     }
 }
