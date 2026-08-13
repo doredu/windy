@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getUpdateStatus, checkForUpdates, installUpdate, type UpdateStatusDto } from "../shared/bindings.ts";
+import {
+  getUpdateStatus,
+  checkForUpdates,
+  installUpdate,
+  onWindowFocusChanged,
+  type UpdateStatusDto,
+} from "../shared/bindings.ts";
 
 interface SettingsDto {
   max_items: number | null;
@@ -53,9 +59,15 @@ function renderUpdateStatus(status: UpdateStatusDto) {
 
 async function manualCheck() {
   updateActionEl.disabled = true;
-  const status = await checkForUpdates();
-  updateActionEl.disabled = false;
-  renderUpdateStatus(status);
+  try {
+    const status = await checkForUpdates();
+    renderUpdateStatus(status);
+  } catch {
+    updateBannerEl.classList.add("error");
+    updateTextEl.textContent = "Check failed — try again later";
+  } finally {
+    updateActionEl.disabled = false;
+  }
 }
 
 async function installNow() {
@@ -79,3 +91,7 @@ async function loadUpdateStatus() {
 
 load();
 loadUpdateStatus();
+
+onWindowFocusChanged((focused) => {
+  if (focused) loadUpdateStatus();
+});

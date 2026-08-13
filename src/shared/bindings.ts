@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export interface HistoryItemDto {
   id: number;
@@ -37,3 +38,5 @@ export const installUpdate = () => invoke<void>("install_update");
 export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
   listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
 export const onHistoryUpdated = (cb: () => void) => listen("history-updated", () => cb());
+export const onWindowFocusChanged = (cb: (focused: boolean) => void) =>
+  getCurrentWindow().onFocusChanged(({ payload }) => cb(payload));

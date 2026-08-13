@@ -207,7 +207,7 @@ pub async fn check_for_updates(app: AppHandle, state: State<'_, UpdateState>) ->
 
 #[tauri::command]
 pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>) -> Result<(), String> {
-    let update = state.lock().unwrap_or_else(PoisonError::into_inner).take().ok_or("no update available")?;
+    let update = state.lock().unwrap_or_else(PoisonError::into_inner).clone().ok_or("no update available")?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
     app.request_restart();
     Ok(())
