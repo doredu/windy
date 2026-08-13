@@ -38,8 +38,8 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
                 d.check(Instant::now(), Duration::from_secs(3))
             };
             if fired {
-                let (x, y) = crate::win32::cursor_position();
-                let (px, py) = clamp_popup_position((x, y), (260, 320), primary_screen_bounds());
+                let cursor = crate::win32::cursor_position();
+                let (px, py) = clamp_popup_position(cursor, (260, 320), monitor_bounds_at(cursor));
                 let _ = app_handle.emit("show-popup", serde_json::json!({ "x": px, "y": py }));
             }
         });
@@ -64,18 +64,33 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
     }
 }
 
-/// Bounds of the primary monitor in virtual-screen coordinates. Not pure
-/// (calls `GetSystemMetrics`), so no unit test -- covered by manual
-/// verification only.
-fn primary_screen_bounds() -> (i32, i32, i32, i32) {
+/// Returns the work-area bounds (i.e. excluding the taskbar), in
+/// virtual-screen coordinates, of whichever monitor contains `cursor`. Not
+/// pure (calls `MonitorFromPoint`/`GetMonitorInfoW`), so no unit test --
+/// covered by manual verification only.
+///
+/// Falls back to a (0, 0, 0, 0) bounds box (which `clamp_popup_position`
+/// will clamp the popup's origin into) if `GetMonitorInfoW` fails -- this
+/// should never happen in practice since `MonitorFromPoint` with
+/// `MONITOR_DEFAULTTONEAREST` always returns a valid monitor handle.
+fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+
     unsafe {
-        let w = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
-            windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN,
-        );
-        let h = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
-            windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
-        );
-        (0, 0, w, h)
+        let point = POINT { x: cursor.0, y: cursor.1 };
+        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            eprintln!("watcher: GetMonitorInfoW failed; popup positioning may be wrong");
+            return (0, 0, 0, 0);
+        }
+
+        let rc = info.rcWork;
+        (rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top)
     }
 }
 
@@ -97,11 +112,14 @@ unsafe fn install_keyboard_hook(detector: Arc<Mutex<HoldDetector>>) {
 
     let hook = match SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) {
         Ok(h) => h,
-        Err(_) => return, // nothing we can do without the hook; don't panic on a background thread
+        Err(e) => {
+            eprintln!("watcher: SetWindowsHookExW failed, hold-to-open is disabled: {e}");
+            return;
+        }
     };
 
     let mut msg = MSG::default();
-    while GetMessageW(&mut msg, None, 0, 0).into() {}
+    while GetMessageW(&mut msg, None, 0, 0).0 > 0 {}
     let _ = UnhookWindowsHookEx(hook);
 }
 
@@ -122,7 +140,7 @@ unsafe extern "system" fn hook_proc(
     // Guard the whole body in catch_unwind: any panic inside (mutex logic,
     // etc.) is swallowed here rather than unwinding across the FFI boundary.
     // CallNextHookEx below always runs regardless.
-    let _ = std::panic::catch_unwind(|| {
+    let result = std::panic::catch_unwind(|| {
         if code >= 0 {
             let data = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
             let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
@@ -132,8 +150,8 @@ unsafe extern "system" fn hook_proc(
                     if let Some(detector) = cell.borrow().as_ref() {
                         let mut d = detector.lock().unwrap_or_else(PoisonError::into_inner);
                         match data.vkCode {
-                            0xA2 | 0xA3 | 0x11 => d.set_ctrl(down), // VK_LCONTROL, VK_RCONTROL, VK_CONTROL
-                            0x43 => d.set_c(down),                   // VK_C
+                            0xA2 | 0xA3 => d.set_ctrl(down), // VK_LCONTROL, VK_RCONTROL (WH_KEYBOARD_LL never reports the generic 0x11)
+                            0x43 => d.set_c(down),           // VK_C
                             _ => {}
                         }
                     }
@@ -141,6 +159,9 @@ unsafe extern "system" fn hook_proc(
             }
         }
     });
+    if result.is_err() {
+        eprintln!("watcher: hook_proc panicked and was caught; key state may be stale");
+    }
 
     windows::Win32::UI::WindowsAndMessaging::CallNextHookEx(None, code, wparam, lparam)
 }
@@ -168,7 +189,10 @@ unsafe fn run_clipboard_listener(app_handle: AppHandle, store: Arc<Mutex<History
     let class_name = w!("ClipboardManagerListenerWindow");
     let hinstance = match GetModuleHandleW(None) {
         Ok(h) => h,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("watcher: GetModuleHandleW failed, clipboard capture is disabled: {e}");
+            return;
+        }
     };
 
     let wc = WNDCLASSW {
@@ -177,7 +201,10 @@ unsafe fn run_clipboard_listener(app_handle: AppHandle, store: Arc<Mutex<History
         lpszClassName: class_name,
         ..Default::default()
     };
-    RegisterClassW(&wc);
+    if RegisterClassW(&wc) == 0 {
+        eprintln!("watcher: RegisterClassW failed, clipboard capture is disabled");
+        return;
+    }
 
     let hwnd = match CreateWindowExW(
         Default::default(),
@@ -194,13 +221,19 @@ unsafe fn run_clipboard_listener(app_handle: AppHandle, store: Arc<Mutex<History
         None,
     ) {
         Ok(hwnd) => hwnd,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("watcher: CreateWindowExW failed, clipboard capture is disabled: {e}");
+            return;
+        }
     };
 
-    let _ = AddClipboardFormatListener(hwnd);
+    if let Err(e) = AddClipboardFormatListener(hwnd) {
+        eprintln!("watcher: AddClipboardFormatListener failed, clipboard capture is disabled: {e}");
+        return;
+    }
 
     let mut msg = MSG::default();
-    while GetMessageW(&mut msg, None, 0, 0).into() {
+    while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
         let _ = TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -219,7 +252,7 @@ unsafe extern "system" fn listener_wndproc(
     use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_CLIPBOARDUPDATE};
 
     if msg == WM_CLIPBOARDUPDATE {
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             LISTENER_CTX.with(|cell| {
                 if let Some((app_handle, store)) = cell.borrow().as_ref() {
                     if let Some(item) = crate::clipboard_io::capture_current_clipboard() {
@@ -235,6 +268,9 @@ unsafe extern "system" fn listener_wndproc(
                 }
             });
         }));
+        if result.is_err() {
+            eprintln!("watcher: listener_wndproc panicked and was caught; a clipboard change may not have been captured");
+        }
         return windows::Win32::Foundation::LRESULT(0);
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
