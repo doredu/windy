@@ -1,3 +1,5 @@
 /src/dist
 /node_modules
 /.claude/worktrees/
+src-tauri/updater.key
+src-tauri/updater.key.password.txt
