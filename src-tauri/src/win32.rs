@@ -3,7 +3,7 @@
 // Windows API — no higher-level clipboard capture/write-back logic lives here.
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
+use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
@@ -14,6 +14,27 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 const CF_HDROP: u32 = 15;
 
+/// Clipboard access (`OpenClipboard`) commonly fails transiently right after
+/// `WM_CLIPBOARDUPDATE` fires, while the source app still holds the
+/// clipboard open. Retry a short, bounded number of times rather than
+/// silently giving up on the capture.
+const OPEN_CLIPBOARD_RETRY_ATTEMPTS: u32 = 5;
+const OPEN_CLIPBOARD_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Calls `OpenClipboard`, retrying briefly on failure. Returns `true` once
+/// open, `false` if it never succeeded within the retry budget.
+unsafe fn open_clipboard_with_retry() -> bool {
+    for attempt in 0..OPEN_CLIPBOARD_RETRY_ATTEMPTS {
+        if OpenClipboard(HWND(std::ptr::null_mut())).is_ok() {
+            return true;
+        }
+        if attempt + 1 < OPEN_CLIPBOARD_RETRY_ATTEMPTS {
+            std::thread::sleep(OPEN_CLIPBOARD_RETRY_DELAY);
+        }
+    }
+    false
+}
+
 /// Returns the current cursor position in screen coordinates.
 pub fn cursor_position() -> (i32, i32) {
     let mut point = windows::Win32::Foundation::POINT::default();
@@ -23,19 +44,47 @@ pub fn cursor_position() -> (i32, i32) {
     (point.x, point.y)
 }
 
-/// Checks whether the clipboard currently carries the well-known
-/// "ExcludeClipboardContentFromMonitorProcessing" registered format, which
-/// apps (e.g. password managers) use to opt out of history tools.
+/// Checks whether the clipboard currently carries either of the two
+/// well-known opt-out markers apps (e.g. password managers) use to exclude
+/// their content from history tools:
+/// - "ExcludeClipboardContentFromMonitorProcessing" registered format
+///   (presence alone means excluded), or
+/// - "CanIncludeInClipboardHistory" registered format present with a DWORD
+///   value of 0 (explicitly means "do not include").
 pub fn clipboard_has_exclude_format() -> bool {
-    let name: Vec<u16> = "ExcludeClipboardContentFromMonitorProcessing\0"
+    let exclude_name: Vec<u16> = "ExcludeClipboardContentFromMonitorProcessing\0"
         .encode_utf16()
         .collect();
     unsafe {
-        let format = RegisterClipboardFormatW(PCWSTR(name.as_ptr()));
-        if format == 0 {
+        let exclude_format = RegisterClipboardFormatW(PCWSTR(exclude_name.as_ptr()));
+        if exclude_format != 0 && IsClipboardFormatAvailable(exclude_format).is_ok() {
+            return true;
+        }
+    }
+
+    let history_name: Vec<u16> = "CanIncludeInClipboardHistory\0".encode_utf16().collect();
+    unsafe {
+        let history_format = RegisterClipboardFormatW(PCWSTR(history_name.as_ptr()));
+        if history_format == 0 || IsClipboardFormatAvailable(history_format).is_err() {
             return false;
         }
-        IsClipboardFormatAvailable(format).is_ok()
+
+        if !open_clipboard_with_retry() {
+            return false;
+        }
+        let excluded = (|| -> bool {
+            let Ok(handle) = GetClipboardData(history_format) else { return false };
+            let hglobal = HGLOBAL(handle.0);
+            let ptr = GlobalLock(hglobal);
+            if ptr.is_null() {
+                return false;
+            }
+            let value = std::ptr::read_unaligned(ptr as *const u32);
+            let _ = GlobalUnlock(hglobal);
+            value == 0
+        })();
+        let _ = CloseClipboard();
+        excluded
     }
 }
 
@@ -43,7 +92,7 @@ pub fn clipboard_has_exclude_format() -> bool {
 /// present.
 pub fn read_hdrop() -> Option<Vec<String>> {
     unsafe {
-        if OpenClipboard(HWND(std::ptr::null_mut())).is_err() {
+        if !open_clipboard_with_retry() {
             return None;
         }
 
@@ -141,10 +190,28 @@ pub fn write_hdrop(paths: &[String]) -> Result<(), String> {
     }
 }
 
-/// Returns `%APPDATA%\clipboard-manager\images`.
+/// The app's resolved data directory, set once at startup via
+/// `set_app_data_dir` to the *same* directory `main.rs` uses for the
+/// history DB (Tauri's `app.path().app_data_dir()`). This ensures images and
+/// the DB always live under one root instead of two independently
+/// hardcoded/derived paths that can silently diverge.
+static APP_DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Records the app's resolved data directory. Must be called once, early at
+/// startup (before any capture can happen), with the same directory used to
+/// open the history DB.
+pub fn set_app_data_dir(dir: std::path::PathBuf) {
+    let _ = APP_DATA_DIR.set(dir);
+}
+
+/// Returns `<app_data_dir>\images`, where `app_data_dir` is the directory
+/// set via `set_app_data_dir` (falling back to a hardcoded
+/// `%APPDATA%\clipboard-manager` root only if that was never called, e.g. in
+/// unit tests that exercise capture directly without going through
+/// `main.rs`'s startup).
 pub fn images_dir() -> std::path::PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("clipboard-manager")
-        .join("images")
+    let root = APP_DATA_DIR.get().cloned().unwrap_or_else(|| {
+        dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("clipboard-manager")
+    });
+    root.join("images")
 }
