@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod store;
-mod hold_detector;
 mod position;
 mod win32;
 mod clipboard_io;

@@ -1,58 +1,49 @@
-// Watcher thread wiring: owns only the OS hook/listener plumbing that drives
-// the pure `hold_detector::HoldDetector` state machine and feeds captured
-// clipboard changes into `store::HistoryStore`.
+// Watcher thread wiring: owns only the OS hook/listener plumbing that
+// triggers the popup toggle and feeds captured clipboard changes into
+// `store::HistoryStore`.
 //
-// No raw Win32 FFI primitives live here beyond what's needed to install the
-// low-level keyboard hook and the clipboard-format-listener window -- the
-// reusable Win32 wrappers (cursor position, hdrop, exclude-format checks,
-// images_dir) already live in `crate::win32` (built in Task 5) and are
-// reused here, not redefined.
+// The Ctrl+Alt+V toggle is implemented with Windows' native `RegisterHotKey`
+// API (WM_HOTKEY), not a hand-rolled `WH_KEYBOARD_LL` low-level hook. An
+// earlier version of this file used a custom hook + edge-triggered state
+// machine (see git history / hold_detector.rs's removal) to detect the
+// combo, but that approach was found (empirically, via extensive manual
+// testing) to be unreliable: Windows would intermittently fail to deliver
+// key-up events for Ctrl/V once Alt was involved (Alt has special
+// system-menu-tracking behavior in the low-level input pipeline), leaving
+// the hand-rolled detector's internal state stuck and the hook occasionally
+// unresponsive after a full press-release cycle. `RegisterHotKey` is the
+// purpose-built OS API for "fire once when this exact combo is pressed" and
+// sidesteps all of that: Windows does the chord-matching internally and
+// delivers a single, reliable `WM_HOTKEY` message per press, with
+// `MOD_NOREPEAT` suppressing re-fires while the combo is held down.
+//
+// No raw Win32 FFI primitives live here beyond what's needed to register the
+// hotkey and the clipboard-format-listener window -- the reusable Win32
+// wrappers (cursor position, hdrop, exclude-format checks, images_dir)
+// already live in `crate::win32` (built in Task 5) and are reused here, not
+// redefined.
 
-use crate::hold_detector::HoldDetector;
 use crate::position::clamp_popup_position;
 use crate::store::HistoryStore;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
-/// Starts the three watcher threads:
-/// - a 100ms timer thread that polls the shared `HoldDetector` and emits
-///   `"show-popup"` when a 3s Ctrl+C hold is detected;
-/// - a keyboard-hook thread that installs a `WH_KEYBOARD_LL` hook and feeds
-///   key state into the shared `HoldDetector`;
+/// Starts the two watcher threads:
+/// - a hotkey thread that registers Ctrl+Alt+V as a system-wide hotkey via
+///   `RegisterHotKey` and emits `"toggle-popup"` on each `WM_HOTKEY`;
 /// - a clipboard-listener thread that registers a hidden message-only
 ///   window for `WM_CLIPBOARDUPDATE` and captures clipboard changes into
 ///   `store`, emitting `"history-updated"` after each successful capture.
 pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
-    let detector = Arc::new(Mutex::new(HoldDetector::new()));
-
-    // Timer thread: polls the shared detector every 100ms and asks it to fire.
+    // Hotkey thread: registers Ctrl+Alt+V and pumps a message loop to
+    // receive WM_HOTKEY. Owns the thread the hotkey is registered on --
+    // RegisterHotKey ties the registration to the calling thread's message
+    // queue, so this must stay a dedicated thread with its own loop.
     {
-        let detector = detector.clone();
         let app_handle = app_handle.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(100));
-            let fired = {
-                let mut d = detector.lock().unwrap_or_else(PoisonError::into_inner);
-                d.check(Instant::now(), Duration::from_secs(3))
-            };
-            if fired {
-                let cursor = crate::win32::cursor_position();
-                let popup_size = popup_physical_size(&app_handle);
-                let (px, py) = clamp_popup_position(cursor, popup_size, monitor_bounds_at(cursor));
-                let _ = app_handle.emit("show-popup", serde_json::json!({ "x": px, "y": py }));
-            }
-        });
-    }
-
-    // Keyboard hook thread: installs WH_KEYBOARD_LL, feeds key state into
-    // `detector`. Runs its own message loop (required for a low-level hook
-    // to receive callbacks) and owns the thread the thread-local is set on.
-    {
-        let detector = detector.clone();
         std::thread::spawn(move || unsafe {
-            install_keyboard_hook(detector);
+            run_hotkey_listener(app_handle);
         });
     }
 
@@ -92,9 +83,7 @@ fn popup_physical_size(app_handle: &AppHandle) -> (i32, i32) {
 }
 
 /// Returns the work-area bounds (i.e. excluding the taskbar), in
-/// virtual-screen coordinates, of whichever monitor contains `cursor`. Not
-/// pure (calls `MonitorFromPoint`/`GetMonitorInfoW`), so no unit test --
-/// covered by manual verification only.
+/// virtual-screen coordinates, of whichever monitor contains `cursor`.
 ///
 /// Falls back to a (0, 0, 0, 0) bounds box (which `clamp_popup_position`
 /// will clamp the popup's origin into) if `GetMonitorInfoW` fails -- this
@@ -121,76 +110,38 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
     }
 }
 
-thread_local! {
-    static HOOK_DETECTOR: RefCell<Option<Arc<Mutex<HoldDetector>>>> = RefCell::new(None);
-}
+/// Arbitrary id identifying our hotkey registration to `RegisterHotKey`/
+/// `UnregisterHotKey` and matched against `WM_HOTKEY`'s wParam.
+const TOGGLE_HOTKEY_ID: i32 = 1;
 
-/// Installs the low-level keyboard hook on the calling (dedicated) thread
-/// and pumps a message loop to keep it alive. Must be called from the
-/// thread that will own the hook -- the thread-local is set here, on that
-/// same thread, before the hook is installed, so `hook_proc` (which also
-/// runs on this thread) can reach it.
-unsafe fn install_keyboard_hook(detector: Arc<Mutex<HoldDetector>>) {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL,
+/// Registers Ctrl+Alt+V as a system-wide hotkey and pumps a message loop to
+/// receive `WM_HOTKEY` on the calling (dedicated) thread -- `RegisterHotKey`
+/// ties the registration to the calling thread's message queue, so this
+/// must run on its own thread for the lifetime of the app.
+unsafe fn run_hotkey_listener(app_handle: AppHandle) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
     };
+    use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
-    HOOK_DETECTOR.with(|cell| *cell.borrow_mut() = Some(detector));
+    const VK_V: u32 = 0x56;
+    let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_NOREPEAT.0);
 
-    let hook = match SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("watcher: SetWindowsHookExW failed, hold-to-open is disabled: {e}");
-            return;
-        }
-    };
-
-    let mut msg = MSG::default();
-    while GetMessageW(&mut msg, None, 0, 0).0 > 0 {}
-    let _ = UnhookWindowsHookEx(hook);
-}
-
-/// `WH_KEYBOARD_LL` hook callback. Runs on the OS's behalf on the hook
-/// thread's message loop -- it must never panic (a panic unwinding across
-/// this `extern "system"` boundary is undefined behavior) and must ALWAYS
-/// call `CallNextHookEx`, on every path, so this hook never blocks key
-/// delivery anywhere else on the system.
-unsafe extern "system" fn hook_proc(
-    code: i32,
-    wparam: windows::Win32::Foundation::WPARAM,
-    lparam: windows::Win32::Foundation::LPARAM,
-) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
-    };
-
-    // Guard the whole body in catch_unwind: any panic inside (mutex logic,
-    // etc.) is swallowed here rather than unwinding across the FFI boundary.
-    // CallNextHookEx below always runs regardless.
-    let result = std::panic::catch_unwind(|| {
-        if code >= 0 {
-            let data = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
-            let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
-            let up = matches!(wparam.0 as u32, WM_KEYUP | WM_SYSKEYUP);
-            if down || up {
-                HOOK_DETECTOR.with(|cell| {
-                    if let Some(detector) = cell.borrow().as_ref() {
-                        let mut d = detector.lock().unwrap_or_else(PoisonError::into_inner);
-                        match data.vkCode {
-                            0xA2 | 0xA3 => d.set_ctrl(down), // VK_LCONTROL, VK_RCONTROL (WH_KEYBOARD_LL never reports the generic 0x11)
-                            0x43 => d.set_c(down),           // VK_C
-                            _ => {}
-                        }
-                    }
-                });
-            }
-        }
-    });
-    if result.is_err() {
-        eprintln!("watcher: hook_proc panicked and was caught; key state may be stale");
+    if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, VK_V) {
+        eprintln!("watcher: RegisterHotKey failed, the Ctrl+Alt+V toggle is disabled: {e}");
+        return;
     }
 
-    windows::Win32::UI::WindowsAndMessaging::CallNextHookEx(None, code, wparam, lparam)
+    let mut msg = MSG::default();
+    while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+        if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == TOGGLE_HOTKEY_ID {
+            let cursor = crate::win32::cursor_position();
+            let popup_size = popup_physical_size(&app_handle);
+            let (px, py) = clamp_popup_position(cursor, popup_size, monitor_bounds_at(cursor));
+            let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
+        }
+    }
+    let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
 }
 
 thread_local! {
@@ -268,8 +219,9 @@ unsafe fn run_clipboard_listener(app_handle: AppHandle, store: Arc<Mutex<History
 
 /// Window procedure for the hidden clipboard-listener window. Runs on the
 /// OS's behalf on the listener thread's message loop -- must never panic
-/// (see `hook_proc` for why) and always falls through to `DefWindowProcW`
-/// for anything it doesn't explicitly handle.
+/// (an unwind across this `extern "system"` boundary is undefined behavior)
+/// and always falls through to `DefWindowProcW` for anything it doesn't
+/// explicitly handle.
 unsafe extern "system" fn listener_wndproc(
     hwnd: windows::Win32::Foundation::HWND,
     msg: u32,

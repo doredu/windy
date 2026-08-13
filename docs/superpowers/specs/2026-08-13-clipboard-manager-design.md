@@ -5,9 +5,24 @@ Date: 2026-08-13
 ## Summary
 
 A Windows background utility that tracks clipboard history (text, images,
-files) and shows a small popup near the cursor when Ctrl+C is held for 3
-seconds, letting the user browse and select a past clipboard item via mouse
-or the `1`–`9` keys.
+files) and toggles a small popup near the cursor on a single press of
+Ctrl+Alt+V, letting the user browse and select a past clipboard item via
+mouse or the `1`–`9` keys.
+
+**Revision note:** the original design used a 3-second Ctrl+C hold as the
+trigger. That was replaced after implementation testing surfaced two real
+problems: (1) holding Ctrl+C is exactly the terminal SIGINT combo, so a
+held-down repeat could interrupt/kill running terminal processes; (2) a
+hand-rolled `WH_KEYBOARD_LL` hook state machine for detecting a 3-key combo
+(first Ctrl+Shift+V, then Ctrl+Alt+V) proved unreliable in practice —
+Ctrl+Shift collided with Windows' input-language-switch hotkey on this
+machine's locale, and even Ctrl+Alt exhibited intermittent missed key-up
+delivery (Alt has special system-menu-tracking behavior in the low-level
+input pipeline). The fix was to stop hand-rolling combo detection entirely
+and use Windows' native `RegisterHotKey` API (`WM_HOTKEY`), the purpose-built
+mechanism for exactly this scenario — a single press of Ctrl+Alt+V now
+toggles the popup open/closed reliably, verified across repeated real-input
+cycles.
 
 ## Stack
 
@@ -15,20 +30,21 @@ or the `1`–`9` keys.
 - **Frontend**: HTML/CSS/TypeScript, built with Deno tooling, rendered in
   Tauri's webview (WebView2 on Windows).
 - **Storage**: SQLite (`rusqlite`) + loose PNG files for images.
-- **Windows APIs**: `windows-rs` for the low-level keyboard hook, clipboard
-  format listener, cursor position, and clipboard read/write.
+- **Windows APIs**: `windows-rs` for `RegisterHotKey` (global toggle hotkey),
+  clipboard format listener, cursor position, and clipboard read/write.
 
 ## Architecture
 
 One Tauri binary with three logical parts:
 
 1. **Native watcher thread** (Rust) — owns:
-   - A `WH_KEYBOARD_LL` low-level keyboard hook. Tracks when Ctrl and C are
-     both down; starts a timer on that state; if still held at 3000ms,
-     emits a `show-popup` event carrying the current cursor position (via
+   - A `RegisterHotKey` registration for Ctrl+Alt+V (with `MOD_NOREPEAT`).
+     Windows delivers a `WM_HOTKEY` message on each press; the handler emits
+     a `toggle-popup` event carrying the current cursor position (via
      `GetCursorPos`, virtual-screen coordinates — multi-monitor safe by
-     construction). The hook never blocks or consumes the keystrokes — it
-     only observes — so normal copy behavior everywhere else is untouched.
+     construction). `RegisterHotKey` only fires for the exact registered
+     combo — it never intercepts or blocks any other keystroke, including
+     Ctrl+C — so normal copy behavior everywhere else is untouched.
    - A hidden message-only window registered with
      `AddClipboardFormatListener`. Receives `WM_CLIPBOARDUPDATE` the instant
      the clipboard changes — event-driven, no polling.
@@ -84,8 +100,9 @@ key exists, update its `created_at` (bump to top) instead of inserting a new
 row → otherwise insert → prune rows beyond `max_items` or older than
 `retention_days` → emit `history-updated` to the popup if it's open.
 
-**Show popup**: hook fires at 3s hold → Rust reads cursor position → popup
-window is created/moved/shown at that point → webview calls `get_history` →
+**Toggle popup**: Ctrl+Alt+V pressed → `WM_HOTKEY` fires → Rust reads cursor
+position → if the popup is already visible, it's hidden; otherwise the
+window is moved to that point and shown → webview calls `get_history` →
 renders the list.
 
 **Select** (click or `1`–`9`): webview calls `select_item(id)` → Rust writes
@@ -98,10 +115,10 @@ row removed from the DB; associated image file (if any) deleted from disk →
 
 ## Edge Cases & Error Handling
 
-- **Hook install fails** (e.g. blocked by security software): app keeps
-  running; tray icon shows a warning state; the popup just won't
-  auto-appear. Settings window provides a manual "Open history" fallback so
-  the app isn't otherwise unusable.
+- **Hotkey registration fails** (e.g. combo already claimed by another app,
+  or blocked by security software): app keeps running; tray icon shows a
+  warning state; the popup just won't respond to Ctrl+Alt+V. Tray menu's
+  "Open History" item is the fallback so the app isn't otherwise unusable.
 - **Large payloads**: text capped (e.g. 200KB) before storing so old huge
   entries don't bloat the DB; images downscaled to a max dimension before
   being saved as the stored PNG.
@@ -119,7 +136,7 @@ row removed from the DB; associated image file (if any) deleted from disk →
 - **Rust unit tests**: dedup-key computation, prune-boundary logic
   (`max_items` / `retention_days`), format-priority selection.
 - **Manual/integration checks** (hard to automate against real OS hooks):
-  hold-to-show timing, hook not interfering with normal copy elsewhere,
+  Ctrl+Alt+V toggle-open/toggle-close reliability across repeated presses,
   multi-monitor popup positioning, autostart registry entry, exclusion
   against a real password manager.
 - No automated UI/e2e layer for v1 — single-user background utility, not

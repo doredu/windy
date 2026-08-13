@@ -23,6 +23,6 @@ export const deleteItem = (id: number) => invoke<void>("delete_item", { id });
 export const getSettings = () => invoke<SettingsDto>("get_settings");
 export const setSettings = (settings: SettingsDto) => invoke<void>("set_settings", { settings });
 
-export const onShowPopup = (cb: (pos: { x: number; y: number }) => void) =>
-  listen<{ x: number; y: number }>("show-popup", (e) => cb(e.payload));
+export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
+  listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
 export const onHistoryUpdated = (cb: () => void) => listen("history-updated", () => cb());

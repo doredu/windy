@@ -6,7 +6,7 @@ import {
   getHistory,
   selectItem,
   deleteItem,
-  onShowPopup,
+  onTogglePopup,
   onHistoryUpdated,
   type HistoryItemDto,
 } from "../shared/bindings.ts";
@@ -78,9 +78,15 @@ window.addEventListener("blur", async () => {
   await getCurrentWindow().hide();
 });
 
-onShowPopup(async (pos) => {
-  await refresh();
+// Ctrl+Shift+V toggles: if the popup is already open, close it (same as
+// Esc/click-outside); otherwise position it at the cursor and open it.
+onTogglePopup(async (pos) => {
   const win = getCurrentWindow();
+  if (await win.isVisible()) {
+    await win.hide();
+    return;
+  }
+  await refresh();
   // `pos` is the already-clamped (screen-edge-aware) position computed in
   // Rust (position.rs, Task 4) — apply it directly, no re-clamping here.
   await win.setPosition(new PhysicalPosition(pos.x, pos.y));
