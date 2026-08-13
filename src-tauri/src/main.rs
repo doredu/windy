@@ -3,6 +3,8 @@
 mod store;
 mod hold_detector;
 mod position;
+mod win32;
+mod clipboard_io;
 
 fn main() {
     tauri::Builder::default()
