@@ -4,7 +4,7 @@
 
 use crate::store::HistoryStore;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tauri::{AppHandle, State};
 
 #[derive(Serialize)]
@@ -28,7 +28,7 @@ pub type Store = Arc<Mutex<HistoryStore>>;
 pub fn get_history(store: State<Store>) -> Result<Vec<HistoryItemDto>, String> {
     store
         .lock()
-        .unwrap()
+        .unwrap_or_else(PoisonError::into_inner)
         .get_history()
         .map(|items| {
             items
@@ -46,14 +46,14 @@ pub fn get_history(store: State<Store>) -> Result<Vec<HistoryItemDto>, String> {
 
 #[tauri::command]
 pub fn select_item(id: i64, store: State<Store>) -> Result<(), String> {
-    let history = store.lock().unwrap().get_history().map_err(|e| e.to_string())?;
+    let history = store.lock().unwrap_or_else(PoisonError::into_inner).get_history().map_err(|e| e.to_string())?;
     let item = history.into_iter().find(|i| i.id == id).ok_or("item not found")?;
     crate::clipboard_io::write_item_to_clipboard(&item)
 }
 
 #[tauri::command]
 pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
-    let image_path = store.lock().unwrap().delete_item(id).map_err(|e| e.to_string())?;
+    let image_path = store.lock().unwrap_or_else(PoisonError::into_inner).delete_item(id).map_err(|e| e.to_string())?;
     if let Some(path) = image_path {
         let _ = std::fs::remove_file(path);
     }
@@ -62,7 +62,7 @@ pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
-    let s = store.lock().unwrap();
+    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(SettingsDto {
         max_items: s.get_setting("max_items").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
         retention_days: s.get_setting("retention_days").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
@@ -76,7 +76,7 @@ pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
 
 #[tauri::command]
 pub fn set_settings(settings: SettingsDto, store: State<Store>, app: AppHandle) -> Result<(), String> {
-    let s = store.lock().unwrap();
+    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(v) = settings.max_items {
         s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?;
     }
