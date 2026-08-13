@@ -1,5 +1,6 @@
 /src/dist
 /node_modules
 /.claude/worktrees/
+/docs/superpowers/
 src-tauri/updater.key
 src-tauri/updater.key.password.txt
