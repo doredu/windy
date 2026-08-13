@@ -187,6 +187,67 @@ mod tests {
     }
 
     #[test]
+    fn opening_a_pre_existing_db_without_the_new_columns_migrates_it_in_place() {
+        // Reproduces a real installed DB from before content_alt/thumb_path
+        // existed: the old 7-column schema, with a real row already in it.
+        let dir = std::env::temp_dir().join(format!("cm-migration-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("history.db");
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE items (
+                    id INTEGER PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    content TEXT,
+                    image_path TEXT,
+                    preview TEXT NOT NULL,
+                    dedup_key TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            )
+            .unwrap();
+            // A realistic recent timestamp -- not an ancient one, which the
+            // default 30-day retention setting would legitimately prune,
+            // masking what this test is actually checking (the migration).
+            conn.execute(
+                "INSERT INTO items (kind, content, image_path, preview, dedup_key, created_at)
+                 VALUES ('text', 'pre-existing item', NULL, 'pre-existing item', 'text:pre-existing item', ?1)",
+                params![now_ms()],
+            )
+            .unwrap();
+        }
+
+        // Before the fix, HistoryStore::open's CREATE TABLE IF NOT EXISTS is
+        // a no-op against this pre-existing table, and get_history's SELECT
+        // (which names content_alt/thumb_path) fails with "no such column".
+        let store = HistoryStore::open(&db_path).unwrap();
+        let history = store.get_history().expect("get_history must succeed against a migrated old DB");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].content.as_deref(), Some("pre-existing item"));
+        assert_eq!(history[0].content_alt, None, "old rows have no content_alt, must read back as NULL not error");
+        assert_eq!(history[0].thumb_path, None);
+
+        // A fresh capture (the real-world "copy something" path) must also
+        // succeed post-migration, not just reads.
+        store
+            .capture(NewItem {
+                kind: "text".into(),
+                content: Some("new item".into()),
+                content_alt: None,
+                image_path: None,
+                thumb_path: None,
+                preview: "new item".into(),
+                dedup_source: "text:new item".into(),
+            })
+            .unwrap();
+        assert_eq!(store.get_history().unwrap().len(), 2);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn prune_deletes_image_and_thumbnail_files_for_evicted_rows() {
         let store = mem_store();
         store.set_setting("max_items", "1").unwrap();
@@ -289,9 +350,22 @@ impl HistoryStore {
             CREATE INDEX IF NOT EXISTS idx_items_dedup ON items(dedup_key);
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
+        Self::migrate_add_column(&conn, "content_alt", "TEXT");
+        Self::migrate_add_column(&conn, "thumb_path", "TEXT");
         let store = Self { conn };
         store.seed_default_settings()?;
         Ok(store)
+    }
+
+    /// Adds `column` to `items` if it isn't already there. `CREATE TABLE IF
+    /// NOT EXISTS` above is a no-op against a pre-existing DB from before
+    /// this column existed (e.g. an installed build's real history.db) --
+    /// this migration is what actually brings an older DB's schema forward,
+    /// so upgrading doesn't break existing history. Safe to call on every
+    /// startup: `ALTER TABLE ADD COLUMN` errors (only) when the column is
+    /// already present, which is expected and ignored.
+    fn migrate_add_column(conn: &Connection, column: &str, sql_type: &str) {
+        let _ = conn.execute(&format!("ALTER TABLE items ADD COLUMN {column} {sql_type}"), []);
     }
 
     /// Seeds sensible defaults on a fresh install so pruning isn't a no-op
