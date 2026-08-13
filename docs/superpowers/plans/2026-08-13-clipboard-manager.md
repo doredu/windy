@@ -1067,6 +1067,7 @@ unsafe extern "system" fn listener_wndproc(
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
+```
 
 - [ ] **Step 3: Wire `spawn` into `main.rs` app setup**
 
