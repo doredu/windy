@@ -14,7 +14,7 @@ use crate::store::HistoryStore;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Starts the three watcher threads:
 /// - a 100ms timer thread that polls the shared `HoldDetector` and emits
@@ -39,7 +39,8 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
             };
             if fired {
                 let cursor = crate::win32::cursor_position();
-                let (px, py) = clamp_popup_position(cursor, (260, 320), monitor_bounds_at(cursor));
+                let popup_size = popup_physical_size(&app_handle);
+                let (px, py) = clamp_popup_position(cursor, popup_size, monitor_bounds_at(cursor));
                 let _ = app_handle.emit("show-popup", serde_json::json!({ "x": px, "y": py }));
             }
         });
@@ -62,6 +63,32 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>) {
             run_clipboard_listener(app_handle, store);
         });
     }
+}
+
+/// tauri.conf.json's declared popup size, in *logical* pixels -- used only
+/// as a last-resort fallback below if the popup window can't be looked up
+/// (should not happen in practice, since the window is always declared).
+const POPUP_LOGICAL_SIZE: (f64, f64) = (320.0, 340.0);
+
+/// Returns the popup window's actual size in *physical* pixels, matching
+/// the unit `GetCursorPos`/`clamp_popup_position` operate in. Uses the live
+/// window's `outer_size()` (already physical) rather than a hardcoded
+/// tuple, since a hardcoded logical-pixel guess can under-clamp on displays
+/// scaled above 100%.
+fn popup_physical_size(app_handle: &AppHandle) -> (i32, i32) {
+    if let Some(window) = app_handle.get_webview_window("popup") {
+        if let Ok(size) = window.outer_size() {
+            return (size.width as i32, size.height as i32);
+        }
+        if let Ok(scale) = window.scale_factor() {
+            return (
+                (POPUP_LOGICAL_SIZE.0 * scale) as i32,
+                (POPUP_LOGICAL_SIZE.1 * scale) as i32,
+            );
+        }
+    }
+    // Last resort: assume 100% scaling.
+    (POPUP_LOGICAL_SIZE.0 as i32, POPUP_LOGICAL_SIZE.1 as i32)
 }
 
 /// Returns the work-area bounds (i.e. excluding the taskbar), in
