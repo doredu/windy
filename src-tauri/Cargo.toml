@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.0"
+version = "0.3.1"
 description = "Windows clipboard history manager"
 authors = ["dor edu <eduu.dorin@gmail.com>"]
 license = "MIT"
