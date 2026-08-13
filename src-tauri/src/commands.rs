@@ -53,8 +53,8 @@ pub fn select_item(id: i64, store: State<Store>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
-    let image_path = store.lock().unwrap_or_else(PoisonError::into_inner).delete_item(id).map_err(|e| e.to_string())?;
-    if let Some(path) = image_path {
+    let paths = store.lock().unwrap_or_else(PoisonError::into_inner).delete_item(id).map_err(|e| e.to_string())?;
+    for path in paths {
         let _ = std::fs::remove_file(path);
     }
     Ok(())

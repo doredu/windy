@@ -85,7 +85,9 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         return Some(NewItem {
             kind: "image".into(),
             content: None,
+            content_alt: None,
             image_path: Some(path.to_string_lossy().to_string()),
+            thumb_path: None,
             preview: format!("Image ({out_w}x{out_h})"),
             dedup_source: format!("image:{hash}"),
         });
@@ -102,7 +104,9 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         return Some(NewItem {
             kind: "files".into(),
             content: Some(content),
+            content_alt: None,
             image_path: None,
+            thumb_path: None,
             preview,
             dedup_source: format!("files:{joined}"),
         });
@@ -114,7 +118,9 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         return Some(NewItem {
             kind: "text".into(),
             content: Some(truncated.clone()),
+            content_alt: None,
             image_path: None,
+            thumb_path: None,
             preview,
             dedup_source: format!("text:{truncated}"),
         });
@@ -170,7 +176,9 @@ mod tests {
             id: 1,
             kind: "text".into(),
             content: Some("clipboard round trip".into()),
+            content_alt: None,
             image_path: None,
+            thumb_path: None,
             preview: "clipboard round trip".into(),
             created_at: 0,
         };
@@ -186,7 +194,9 @@ mod tests {
             id: 1,
             kind: "text".into(),
             content: Some("x".repeat(300_000)),
+            content_alt: None,
             image_path: None,
+            thumb_path: None,
             preview: String::new(),
             created_at: 0,
         }).unwrap();
@@ -245,7 +255,9 @@ mod tests {
             id: 1,
             kind: "text".into(),
             content: Some("中".repeat(100_000)),
+            content_alt: None,
             image_path: None,
+            thumb_path: None,
             preview: String::new(),
             created_at: 0,
         }).unwrap();
