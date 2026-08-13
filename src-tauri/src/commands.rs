@@ -173,7 +173,10 @@ fn item_size(item: &crate::store::HistoryItem) -> Option<String> {
 use tauri_plugin_updater::UpdaterExt;
 
 async fn run_check(app: &AppHandle, state: &State<'_, UpdateState>) -> Result<UpdateStatusDto, String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let updater = app.updater().map_err(|e| {
+        eprintln!("update check failed: {e}");
+        e.to_string()
+    })?;
     match updater.check().await {
         Ok(Some(update)) => {
             let dto = UpdateStatusDto::from_update(&update);
