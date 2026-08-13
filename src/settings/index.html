@@ -3,10 +3,21 @@
 <script type="module" src="../dist/settings/settings.js"></script></head>
 <body>
   <form id="form">
-    <label>Max items <input id="maxItems" type="number" min="1"></label>
-    <label>Retention (days) <input id="retentionDays" type="number" min="1"></label>
-    <label><input id="startWithWindows" type="checkbox"> Start with Windows</label>
-    <button type="submit">Save</button>
-    <span id="status"></span>
+    <div class="field">
+      <label for="maxItems">Max items</label>
+      <input id="maxItems" type="number" min="1">
+    </div>
+    <div class="field">
+      <label for="retentionDays">Retention (days)</label>
+      <input id="retentionDays" type="number" min="1">
+    </div>
+    <label class="checkbox-field">
+      <input id="startWithWindows" type="checkbox">
+      Start with Windows
+    </label>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <span id="status">Saved</span>
+    </div>
   </form>
 </body></html>

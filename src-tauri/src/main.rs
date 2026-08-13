@@ -43,6 +43,16 @@ fn main() {
             watcher::spawn(app.handle().clone(), store.clone());
             app.manage(store);
 
+            if let Some(settings_window) = app.get_webview_window("settings") {
+                let settings_window_handle = settings_window.clone();
+                settings_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = settings_window_handle.hide();
+                    }
+                });
+            }
+
             let open_history = tauri::menu::MenuItemBuilder::with_id("open_history", "Open History").build(app)?;
             let settings = tauri::menu::MenuItemBuilder::with_id("settings", "Settings").build(app)?;
             let quit = tauri::menu::MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -69,6 +79,24 @@ fn main() {
                     }
                     "quit" => app.exit(0),
                     _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // Left-clicking the tray icon opens the popup, same as
+                    // the "Open History" menu item. Right-click already
+                    // opens the context menu by default; only handle Click
+                    // here so we don't also react to Enter/Move/Leave.
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("popup") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
                 });
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());

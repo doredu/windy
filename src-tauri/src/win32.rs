@@ -8,11 +8,12 @@ use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP, DROPFILES};
 use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 const CF_HDROP: u32 = 15;
+const CF_UNICODETEXT: u32 = 13;
 
 /// Clipboard access (`OpenClipboard`) commonly fails transiently right after
 /// `WM_CLIPBOARDUPDATE` fires, while the source app still holds the
@@ -185,6 +186,121 @@ pub fn write_hdrop(paths: &[String]) -> Result<(), String> {
         // free it ourselves if SetClipboardData failed.
         if result.is_err() {
             let _ = GlobalFree(hglobal);
+        }
+        result
+    }
+}
+
+/// Reads the complete raw "HTML Format" clipboard payload -- the whole
+/// CF_HTML block (`Version`/`StartHTML`/`EndHTML`/`StartFragment`/
+/// `EndFragment` header plus the fully wrapped document) -- rather than just
+/// the inner Fragment. Many rich-text sources (Word, Outlook, Excel) declare
+/// their CSS in a `<style>` block that lives *outside* the Fragment markers;
+/// `arboard`'s `Clipboard::get().html()` only extracts the Fragment and
+/// silently drops that styling. Capturing the raw payload verbatim and
+/// writing it back the same way (see `write_html_full`) keeps formatting
+/// intact end to end.
+pub fn read_html_full() -> Option<String> {
+    let name: Vec<u16> = "HTML Format\0".encode_utf16().collect();
+    unsafe {
+        let format = RegisterClipboardFormatW(PCWSTR(name.as_ptr()));
+        if format == 0 {
+            return None;
+        }
+        if !open_clipboard_with_retry() {
+            return None;
+        }
+
+        let result = (|| {
+            if !IsClipboardFormatAvailable(format).is_ok() {
+                return None;
+            }
+            let handle = GetClipboardData(format).ok()?;
+            let hglobal = HGLOBAL(handle.0);
+            let ptr = GlobalLock(hglobal);
+            if ptr.is_null() {
+                return None;
+            }
+            let size = GlobalSize(hglobal);
+            let bytes = std::slice::from_raw_parts(ptr as *const u8, size);
+            // CF_HTML payloads are NUL-terminated; trim before decoding.
+            let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+            let text = String::from_utf8_lossy(&bytes[..end]).into_owned();
+            let _ = GlobalUnlock(hglobal);
+            Some(text)
+        })();
+
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+/// Writes a raw CF_HTML payload (as previously captured by
+/// `read_html_full`) back to the clipboard verbatim, alongside a plain-text
+/// fallback on CF_UNICODETEXT. Bypasses `arboard`'s `Set::html`, which
+/// re-wraps only the inner Fragment through its own minimal header and so
+/// would drop any styling declared outside the Fragment in the original
+/// payload.
+pub fn write_html_full(html: &str, alt: &str) -> Result<(), String> {
+    let name: Vec<u16> = "HTML Format\0".encode_utf16().collect();
+    unsafe {
+        let format = RegisterClipboardFormatW(PCWSTR(name.as_ptr()));
+        if format == 0 {
+            return Err("failed to register HTML Format".into());
+        }
+
+        let alt_wide: Vec<u16> = alt.encode_utf16().chain(std::iter::once(0)).collect();
+        let alt_hglobal = GlobalAlloc(GMEM_MOVEABLE, alt_wide.len() * std::mem::size_of::<u16>()).map_err(|e| e.to_string())?;
+        let alt_ptr = GlobalLock(alt_hglobal);
+        if alt_ptr.is_null() {
+            let _ = GlobalFree(alt_hglobal);
+            return Err("GlobalLock returned null".into());
+        }
+        std::ptr::copy_nonoverlapping(alt_wide.as_ptr(), alt_ptr as *mut u16, alt_wide.len());
+        let _ = GlobalUnlock(alt_hglobal);
+
+        let html_bytes = html.as_bytes();
+        let html_hglobal = match GlobalAlloc(GMEM_MOVEABLE, html_bytes.len() + 1) {
+            Ok(h) => h,
+            Err(e) => {
+                let _ = GlobalFree(alt_hglobal);
+                return Err(e.to_string());
+            }
+        };
+        let html_ptr = GlobalLock(html_hglobal);
+        if html_ptr.is_null() {
+            let _ = GlobalFree(alt_hglobal);
+            let _ = GlobalFree(html_hglobal);
+            return Err("GlobalLock returned null".into());
+        }
+        std::ptr::copy_nonoverlapping(html_bytes.as_ptr(), html_ptr as *mut u8, html_bytes.len());
+        *((html_ptr as *mut u8).add(html_bytes.len())) = 0;
+        let _ = GlobalUnlock(html_hglobal);
+
+        if OpenClipboard(HWND(std::ptr::null_mut())).is_err() {
+            let _ = GlobalFree(alt_hglobal);
+            let _ = GlobalFree(html_hglobal);
+            return Err("OpenClipboard failed".into());
+        }
+
+        // Track whether ownership of `alt_hglobal` has already transferred
+        // to the clipboard, so a later failure doesn't free memory the
+        // clipboard now owns.
+        let mut alt_owned = false;
+        let result = (|| -> Result<(), String> {
+            EmptyClipboard().map_err(|e| e.to_string())?;
+            SetClipboardData(CF_UNICODETEXT, HANDLE(alt_hglobal.0)).map_err(|e| e.to_string())?;
+            alt_owned = true;
+            SetClipboardData(format, HANDLE(html_hglobal.0)).map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+
+        let _ = CloseClipboard();
+        if result.is_err() {
+            if !alt_owned {
+                let _ = GlobalFree(alt_hglobal);
+            }
+            let _ = GlobalFree(html_hglobal);
         }
         result
     }

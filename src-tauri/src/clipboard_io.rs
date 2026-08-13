@@ -122,7 +122,7 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         });
     }
 
-    if let Ok(html) = clipboard.get().html() {
+    if let Some(html) = crate::win32::read_html_full() {
         if !html.trim().is_empty() {
             let truncated_html = truncate_to_byte_cap(&html, TEXT_CAP_BYTES);
             let alt = match retry(|| clipboard.get_text()) {
@@ -212,8 +212,8 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         }
         "richtext" => {
             let html = item.content.clone().unwrap_or_default();
-            let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-            clipboard.set().html(html, item.content_alt.clone()).map_err(|e| e.to_string())
+            let alt = item.content_alt.clone().unwrap_or_default();
+            crate::win32::write_html_full(&html, &alt)
         }
         other => Err(format!("unknown item kind: {other}")),
     }
@@ -350,17 +350,27 @@ mod tests {
         clipboard.set().html("<b>hello</b>", Some("hello")).unwrap();
         let captured = capture_current_clipboard().expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
-        assert_eq!(captured.content.as_deref(), Some("<b>hello</b>"));
+        // The captured content is the *entire* raw CF_HTML payload (header
+        // plus wrapped body), not just the inner Fragment -- so a <style>
+        // block a real source app (Word/Outlook/Excel) places outside the
+        // Fragment markers isn't silently dropped on capture.
+        let content = captured.content.as_deref().unwrap();
+        assert!(content.contains("<b>hello</b>"), "content was: {content}");
+        assert!(content.contains("StartFragment"), "content was: {content}");
         assert_eq!(captured.content_alt.as_deref(), Some("hello"));
         assert_eq!(captured.preview, "hello");
     }
 
     #[test]
     fn richtext_write_then_capture_round_trips() {
+        // A full raw CF_HTML payload (header + wrapped body + a <style>
+        // block living outside the Fragment markers), as `read_html_full`
+        // would have originally captured it from a real source app.
+        let html = "Version:0.9\r\nStartHTML:0000000097\r\nEndHTML:0000000200\r\nStartFragment:0000000160\r\nEndFragment:0000000180\r\n<html><head><style>.c{color:red}</style></head><body><!--StartFragment--><i class=c>styled</i><!--EndFragment--></body></html>";
         let item = HistoryItem {
             id: 1,
             kind: "richtext".into(),
-            content: Some("<i>styled</i>".into()),
+            content: Some(html.into()),
             content_alt: Some("styled".into()),
             image_path: None,
             thumb_path: None,
@@ -370,6 +380,8 @@ mod tests {
         write_item_to_clipboard(&item).unwrap();
         let captured = capture_current_clipboard().expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
-        assert_eq!(captured.content.as_deref(), Some("<i>styled</i>"));
+        // Verbatim round trip -- including the <style> block that a naive
+        // Fragment-only capture would have dropped.
+        assert_eq!(captured.content.as_deref(), Some(html));
     }
 }

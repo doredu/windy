@@ -28,8 +28,8 @@ form.addEventListener("submit", async (e) => {
       start_with_windows: autostartEl.checked,
     },
   });
-  status.textContent = "Saved.";
-  setTimeout(() => (status.textContent = ""), 1500);
+  status.classList.add("visible");
+  setTimeout(() => status.classList.remove("visible"), 1500);
 });
 
 load();

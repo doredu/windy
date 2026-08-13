@@ -14,6 +14,7 @@ pub struct HistoryItemDto {
     pub kind: String,
     pub preview: String,
     pub thumbnail: Option<String>,
+    pub size: Option<String>,
     pub created_at: i64,
 }
 
@@ -99,12 +100,50 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
             .ok()
             .map(|bytes| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
     });
+    let size = item_size(&item);
     HistoryItemDto {
         id: item.id,
         kind: item.kind,
         preview: item.preview,
         thumbnail,
+        size,
         created_at: item.created_at,
+    }
+}
+
+/// Formats a byte count as a short human-readable size, e.g. `"512 B"`,
+/// `"3.4 KB"`, `"1.2 MB"`.
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Computes a short display size for a history item.
+///
+/// - `text`/`richtext`: byte length of the captured content.
+/// - `image`: on-disk size of the (already app-resized) full image file --
+///   local and cheap to stat, unlike arbitrary file-list entries below.
+/// - `files`: item count rather than a byte size, since stat-ing arbitrary
+///   (possibly slow/network) paths on every list render isn't worth it.
+fn item_size(item: &crate::store::HistoryItem) -> Option<String> {
+    match item.kind.as_str() {
+        "image" => item
+            .image_path
+            .as_deref()
+            .and_then(|path| std::fs::metadata(path).ok())
+            .map(|meta| format_size(meta.len())),
+        "files" => {
+            let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).ok()?;
+            Some(format!("{} file{}", paths.len(), if paths.len() == 1 { "" } else { "s" }))
+        }
+        _ => item.content.as_ref().map(|c| format_size(c.len() as u64)),
     }
 }
 
@@ -153,5 +192,71 @@ mod tests {
         };
         let dto = history_item_to_dto(item);
         assert!(dto.thumbnail.is_none());
+    }
+
+    #[test]
+    fn dto_conversion_reports_byte_size_for_text_and_richtext() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "text".into(),
+            content: Some("hello".into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "hello".into(),
+            created_at: 0,
+        };
+        assert_eq!(history_item_to_dto(item).size.as_deref(), Some("5 B"));
+    }
+
+    #[test]
+    fn dto_conversion_reports_kb_size_for_large_content() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "richtext".into(),
+            content: Some("x".repeat(2048)),
+            content_alt: Some("x".repeat(2048)),
+            image_path: None,
+            thumb_path: None,
+            preview: "x".into(),
+            created_at: 0,
+        };
+        assert_eq!(history_item_to_dto(item).size.as_deref(), Some("2.0 KB"));
+    }
+
+    #[test]
+    fn dto_conversion_reports_file_size_for_image() {
+        let dir = std::env::temp_dir().join(format!("cm-dto-size-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let image_path = dir.join("full.png");
+        std::fs::write(&image_path, b"fake-png-bytes-here").unwrap();
+
+        let item = HistoryItem {
+            id: 1,
+            kind: "image".into(),
+            content: None,
+            content_alt: None,
+            image_path: Some(image_path.to_string_lossy().to_string()),
+            thumb_path: None,
+            preview: "Image (10x10)".into(),
+            created_at: 0,
+        };
+        assert_eq!(history_item_to_dto(item).size.as_deref(), Some("19 B"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dto_conversion_reports_file_count_for_files() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(r#"["a.txt","b.txt","c.txt"]"#.into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "3 files".into(),
+            created_at: 0,
+        };
+        assert_eq!(history_item_to_dto(item).size.as_deref(), Some("3 files"));
     }
 }

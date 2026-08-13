@@ -37,6 +37,10 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
 const listEl = document.getElementById("list")!;
 let items: HistoryItemDto[] = [];
 
+document.getElementById("close")!.addEventListener("click", async () => {
+  await getCurrentWindow().hide();
+});
+
 function render() {
   listEl.innerHTML = "";
   items.forEach((item, i) => {
@@ -55,6 +59,13 @@ function render() {
     preview.className = "preview";
     preview.textContent = item.preview;
     row.appendChild(preview);
+
+    if (item.size) {
+      const size = document.createElement("span");
+      size.className = "size";
+      size.textContent = item.size;
+      row.appendChild(size);
+    }
 
     const del = document.createElement("button");
     del.className = "delete";

@@ -9,6 +9,7 @@ export interface HistoryItemDto {
   kind: "text" | "image" | "files" | "richtext";
   preview: string;
   thumbnail: string | null;
+  size: string | null;
   created_at: number;
 }
 

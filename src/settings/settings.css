@@ -1,6 +1,83 @@
-body { font-family: "Segoe UI", sans-serif; padding: 16px; }
-form { display: flex; flex-direction: column; gap: 12px; max-width: 280px; }
-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
-input[type="number"] { width: 80px; }
-button { align-self: flex-start; }
-#status { font-size: 12px; color: #2a7; }
+:root { color-scheme: dark; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: #1e1e22;
+  color: #eee;
+  padding: 18px 20px;
+}
+
+form { display: flex; flex-direction: column; gap: 14px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+
+label { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+
+input[type="number"] {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #eee;
+  font-size: 13px;
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+input[type="number"]:hover { background: rgba(255, 255, 255, 0.09); }
+
+input[type="number"]:focus {
+  border-color: #4f8cff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #eee;
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  accent-color: #4f8cff;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+button {
+  background: #4f8cff;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+button:hover { background: #6b9fff; }
+button:active { background: #3d75e0; }
+
+#status {
+  font-size: 12px;
+  color: #6fd08c;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#status.visible { opacity: 1; transform: translateY(0); }
