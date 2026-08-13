@@ -122,6 +122,26 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         });
     }
 
+    if let Ok(html) = retry(|| clipboard.get().html()) {
+        if !html.trim().is_empty() {
+            let truncated_html = truncate_to_byte_cap(&html, TEXT_CAP_BYTES);
+            let alt = match retry(|| clipboard.get_text()) {
+                Ok(text) => truncate_to_byte_cap(&text, TEXT_CAP_BYTES),
+                Err(_) => truncate_to_byte_cap(&strip_html_tags(&truncated_html), TEXT_CAP_BYTES),
+            };
+            let preview: String = alt.chars().take(120).collect();
+            return Some(NewItem {
+                kind: "richtext".into(),
+                content: Some(truncated_html),
+                content_alt: Some(alt.clone()),
+                image_path: None,
+                thumb_path: None,
+                preview,
+                dedup_source: format!("richtext:{alt}"),
+            });
+        }
+    }
+
     if let Ok(text) = retry(|| clipboard.get_text()) {
         let truncated = truncate_to_byte_cap(&text, TEXT_CAP_BYTES);
         let preview: String = truncated.chars().take(120).collect();
@@ -137,6 +157,25 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
     }
 
     None
+}
+
+/// Last-resort plain-text fallback for a richtext capture when the
+/// clipboard offers CF_HTML but no CF_UNICODETEXT alongside it (rare in
+/// practice -- most rich sources set both). Strips anything between `<`
+/// and `>` rather than parsing HTML properly, which is good enough for a
+/// preview/dedup/alt-text string.
+fn strip_html_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Truncates `text` to at most `cap_bytes` UTF-8 bytes, cutting only on a
@@ -170,6 +209,11 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         "files" => {
             let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).map_err(|e| e.to_string())?;
             crate::win32::write_hdrop(&paths)
+        }
+        "richtext" => {
+            let html = item.content.clone().unwrap_or_default();
+            let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+            clipboard.set().html(html, item.content_alt.clone()).map_err(|e| e.to_string())
         }
         other => Err(format!("unknown item kind: {other}")),
     }
@@ -298,5 +342,34 @@ mod tests {
             thumb_img.width(),
             thumb_img.height()
         );
+    }
+
+    #[test]
+    fn html_on_clipboard_is_captured_as_richtext_with_plain_text_alt() {
+        let mut clipboard = arboard::Clipboard::new().unwrap();
+        clipboard.set().html("<b>hello</b>", Some("hello")).unwrap();
+        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        assert_eq!(captured.kind, "richtext");
+        assert_eq!(captured.content.as_deref(), Some("<b>hello</b>"));
+        assert_eq!(captured.content_alt.as_deref(), Some("hello"));
+        assert_eq!(captured.preview, "hello");
+    }
+
+    #[test]
+    fn richtext_write_then_capture_round_trips() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "richtext".into(),
+            content: Some("<i>styled</i>".into()),
+            content_alt: Some("styled".into()),
+            image_path: None,
+            thumb_path: None,
+            preview: "styled".into(),
+            created_at: 0,
+        };
+        write_item_to_clipboard(&item).unwrap();
+        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        assert_eq!(captured.kind, "richtext");
+        assert_eq!(captured.content.as_deref(), Some("<i>styled</i>"));
     }
 }
