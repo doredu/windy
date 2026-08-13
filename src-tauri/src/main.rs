@@ -2,6 +2,7 @@
 
 mod store;
 mod hold_detector;
+mod position;
 
 fn main() {
     tauri::Builder::default()
