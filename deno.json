@@ -7,6 +7,7 @@
     "build": "deno run -A npm:esbuild src/popup/popup.ts src/settings/settings.ts --bundle --outdir=src/dist --entry-names=[dir]/[name]"
   },
   "imports": {
+    "@tauri-apps/api/app": "npm:@tauri-apps/api@^2/app",
     "@tauri-apps/api/core": "npm:@tauri-apps/api@^2/core",
     "@tauri-apps/api/event": "npm:@tauri-apps/api@^2/event",
     "@tauri-apps/api/window": "npm:@tauri-apps/api@^2/window"

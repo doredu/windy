@@ -15,6 +15,7 @@ import {
   type UpdateStatusDto,
 } from "../shared/bindings.ts";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 
 const maxItemsEl = document.getElementById("maxItems") as HTMLInputElement;
 const retentionEl = document.getElementById("retentionDays") as HTMLInputElement;
@@ -491,6 +492,17 @@ clearHistoryBtn.addEventListener("click", async () => {
   }
 });
 
+// Fetched once at startup; the "Up to date" status previously gave no way
+// to see which version is actually installed short of digging through the
+// installer/uninstall entry, which matters when reporting a bug.
+let currentVersion: string | null = null;
+getVersion()
+  .then((v: string) => {
+    currentVersion = v;
+    if (updateTextEl.textContent === "Up to date") updateTextEl.textContent = `Up to date (v${v})`;
+  })
+  .catch(() => {});
+
 function renderUpdateStatus(status: UpdateStatusDto) {
   updateBannerEl.classList.remove("error");
   if (status.available) {
@@ -508,7 +520,7 @@ function renderUpdateStatus(status: UpdateStatusDto) {
       updateNotesEl.classList.add("hidden");
     }
   } else {
-    updateTextEl.textContent = "Up to date";
+    updateTextEl.textContent = currentVersion ? `Up to date (v${currentVersion})` : "Up to date";
     updateActionEl.textContent = "Check for updates";
     updateActionEl.onclick = manualCheck;
     updateBannerEl.classList.remove("hidden");
