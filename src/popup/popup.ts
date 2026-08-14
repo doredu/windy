@@ -452,6 +452,14 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
   if (e.key === "Enter") {
+    // While an IME composition is active (e.g. typing Japanese/Chinese/Korean
+    // search text), the browser fires a keydown with key === "Enter" and
+    // isComposing === true when the user presses Enter to confirm the
+    // composed text -- that keystroke is meant to commit the IME candidate,
+    // not to select-and-close the popup. Ignoring it here lets composition
+    // finish normally instead of pasting the wrong item and closing the
+    // popup mid-input.
+    if (e.isComposing) return;
     // Tabbing can focus a row's delete button, or the header's Clear-search/
     // Close buttons, independently of selectedIndex (same hazard as the
     // Delete-key handler below) -- if we acted on filtered[selectedIndex]
