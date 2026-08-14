@@ -291,6 +291,9 @@ async function load() {
   clearHistoryOnQuitEl.checked = settings.clear_history_on_quit;
   clearClipboardOnQuitEl.checked = settings.clear_clipboard_on_quit;
   clearClipboardOnQuitEl.disabled = !settings.clear_history_on_quit;
+  hotkeyErrorEl.textContent = "";
+  captureErrorEl.textContent = "";
+  storageErrorEl.textContent = "";
   clearDirty();
 }
 
