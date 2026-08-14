@@ -106,6 +106,8 @@ input[type="text"]#hotkey.recording {
   min-height: 14px;
 }
 
+.field-hint.error { color: #ff8080; }
+
 .danger-btn {
   background: transparent;
   border: 1px solid #e0524d;

@@ -276,8 +276,10 @@ clearHistoryBtn.addEventListener("click", async () => {
   clearHistoryBtn.textContent = "Clearing…";
   try {
     await clearHistory();
+    clearHistoryStatusEl.classList.remove("error");
     clearHistoryStatusEl.textContent = "History cleared";
   } catch (err) {
+    clearHistoryStatusEl.classList.add("error");
     clearHistoryStatusEl.textContent = String(err);
   } finally {
     clearHistoryBtn.disabled = false;
