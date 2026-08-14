@@ -283,6 +283,12 @@ document.addEventListener("focusin", (e) => {
   stopRecording();
 });
 
+// Right-click previously fell through to WebView2's default context menu
+// (Reload / Inspect Element / etc.), which is meaningless -- and exposes
+// devtools -- in this small fixed-size single-purpose Settings window,
+// matching the same suppression applied to the popup window.
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
 document.addEventListener("keydown", (e) => {
   if (!recording) return;
   e.preventDefault();

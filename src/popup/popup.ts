@@ -234,14 +234,6 @@ function render() {
 
     row.onclick = () => selectAndClose(item.id);
 
-    // Right-click previously fell through to WebView2's default context menu
-    // (Reload / Inspect Element / etc.), which is meaningless -- and exposes
-    // devtools -- in this small borderless single-purpose popup. Every other
-    // row interaction (click, Enter, digit keys, Delete key) is purpose-built,
-    // so suppress the native menu rather than leave right-click as an
-    // unintended escape hatch.
-    row.oncontextmenu = (e) => e.preventDefault();
-
     // Keep keyboard selection (used by Enter/scrollIntoView) in sync with
     // the mouse -- otherwise hovering a different row than the last
     // arrow-key selection and pressing Enter would select the wrong item.
@@ -296,6 +288,14 @@ async function applyTheme() {
   // background so text stays readable instead of light-on-light.
   document.documentElement.classList.toggle("light-bg", bgIsLight);
 }
+
+// Right-click anywhere in this window previously fell through to WebView2's
+// default context menu (Reload / Inspect Element / etc.), which is
+// meaningless -- and exposes devtools -- in this small borderless
+// single-purpose popup. Iteration 82 suppressed this on rows only; every
+// other surface (header, search box, empty-list area) was still exposed, so
+// suppress it document-wide instead.
+document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Registered once at module load — not per-render — so we never accumulate
 // duplicate listeners across refreshes.
