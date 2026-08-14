@@ -26,6 +26,7 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
     const img = document.createElement("img");
     img.className = "thumb";
     img.src = item.thumbnail;
+    img.alt = "";
     return img;
   }
   if (item.kind === "files" || item.kind === "richtext") {
@@ -114,6 +115,7 @@ function render() {
     del.className = "delete";
     del.textContent = "×";
     del.title = "Delete";
+    del.setAttribute("aria-label", "Delete");
     del.onclick = async (e) => {
       e.stopPropagation();
       await deleteItem(item.id);
