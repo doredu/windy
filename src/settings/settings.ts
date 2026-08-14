@@ -148,7 +148,9 @@ resetAccentColorEl.addEventListener("click", () => {
 
 for (const el of [maxItemsEl, retentionEl]) {
   el.addEventListener("input", () => {
-    if (!el.value || Number(el.value) >= 1) storageErrorEl.textContent = "";
+    if (!el.value || (Number.isInteger(Number(el.value)) && Number(el.value) >= 1)) {
+      storageErrorEl.textContent = "";
+    }
   });
 }
 
