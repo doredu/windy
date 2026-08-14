@@ -196,8 +196,13 @@ function render() {
     if (i < 9) {
       badge.textContent = String(i + 1);
       // Surface the digit-key shortcut on hover -- the badge shows the key
-      // but nothing previously explained what pressing it does.
-      badge.title = `Press ${i + 1} to select`;
+      // but nothing previously explained what pressing it does. The shortcut
+      // only fires when the search box isn't focused (see the keydown
+      // handler below), so don't promise it while search has focus -- the
+      // popup auto-focuses search on open, making that the common case.
+      if (document.activeElement !== searchEl) {
+        badge.title = `Press ${i + 1} to select`;
+      }
     }
     row.appendChild(badge);
 
