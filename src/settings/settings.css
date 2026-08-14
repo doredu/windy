@@ -191,6 +191,25 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
+/* Buttons only ever signaled a busy/disabled state via text ("Saving…",
+   "Clearing…", "Checking…", "Updating…") -- visually they stayed identical
+   to enabled, still showing the hover/active background and pointer cursor,
+   so nothing distinguished an inert button from a clickable one. */
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button:disabled:hover,
+button:disabled:active {
+  background: #4f8cff;
+}
+
+.danger-btn:disabled:hover,
+.danger-btn:disabled:active {
+  background: transparent;
+}
+
 #status {
   font-size: 12px;
   color: #6fd08c;
