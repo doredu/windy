@@ -367,7 +367,14 @@ function blurFocusedDeleteButton() {
 let refreshSeq = 0;
 async function refresh(resetSelection = true, scroll = resetSelection) {
   const seq = ++refreshSeq;
-  const result = await getHistory();
+  let result;
+  try {
+    result = await getHistory();
+  } catch (err) {
+    if (seq !== refreshSeq) return;
+    showError(err);
+    return;
+  }
   if (seq !== refreshSeq) return;
   items = result;
   applyFilter(resetSelection, scroll);
@@ -609,17 +616,12 @@ onTogglePopup(async (pos) => {
   // target (e.g. body), which made the hint promise a shortcut that the
   // keydown handler's own searchEl-focus guard would then suppress.
   searchEl.focus();
-  try {
-    await refresh();
-  } catch (err) {
-    // Unlike selectItem/deleteItem below, a failed refresh() here must not
-    // leave the window hidden with popupOpen already true -- that would
-    // desync popupOpen from the window's actual (still-hidden) visibility,
-    // making the very next hotkey press/tray click silently no-op (it'd
-    // take the "already open, hide" branch above on a window nobody can
-    // see). Still show the window so the user actually sees the error.
-    showError(err);
-  }
+  // refresh() now catches its own getHistory() failures internally (shows
+  // an error banner via showError) instead of throwing, so a failed history
+  // fetch here can no longer leave popupOpen desynced from the window's
+  // actual (still-hidden) visibility -- we always fall through and show the
+  // window regardless of whether the refresh succeeded.
+  await refresh();
   // `pos` is the already-clamped (screen-edge-aware) position computed in
   // Rust (position.rs, Task 4) — apply it directly, no re-clamping here.
   await win.setPosition(new PhysicalPosition(pos.x, pos.y));
