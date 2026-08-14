@@ -148,9 +148,18 @@ resetAccentColorEl.addEventListener("click", () => {
   markDirty();
 });
 
+function isValidStorageField(el: HTMLInputElement): boolean {
+  return !el.value || (Number.isInteger(Number(el.value)) && Number(el.value) >= 1);
+}
+
+// Both fields share a single error message, so fixing one field must not
+// clear an error that's still describing the *other* field -- e.g. submit
+// with Max items=0 (error shown), then edit a still-blank/valid Retention
+// field: only clearing based on the field that changed would hide the
+// still-active Max items error.
 for (const el of [maxItemsEl, retentionEl]) {
   el.addEventListener("input", () => {
-    if (!el.value || (Number.isInteger(Number(el.value)) && Number(el.value) >= 1)) {
+    if (isValidStorageField(maxItemsEl) && isValidStorageField(retentionEl)) {
       storageErrorEl.textContent = "";
     }
   });
