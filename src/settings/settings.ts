@@ -313,7 +313,14 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
-  if (!/^[a-zA-Z0-9]$/.test(e.key)) {
+  // Holding Shift remaps e.key to the shifted symbol on a digit (Shift+1 ->
+  // "!"), which the UI explicitly advertises as a valid combo ("Ctrl/Alt/
+  // Shift" hint). Prefer the physical key from e.code for letters/digits so
+  // Shift+<digit> resolves to the digit instead of failing validation on the
+  // shifted symbol.
+  const physicalMatch = /^(?:Key([A-Z])|Digit(\d))$/.exec(e.code);
+  const keyChar = physicalMatch ? physicalMatch[1] ?? physicalMatch[2] : e.key;
+  if (!/^[a-zA-Z0-9]$/.test(keyChar)) {
     hotkeyErrorEl.textContent = `"${e.key}" isn't supported — use a letter or digit`;
     return;
   }
@@ -327,7 +334,7 @@ document.addEventListener("keydown", (e) => {
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
   if (e.metaKey) parts.push("Win");
-  parts.push(e.key.toUpperCase());
+  parts.push(keyChar.toUpperCase());
 
   hotkeyEl.value = parts.join("+");
   hotkeyErrorEl.textContent = "";
