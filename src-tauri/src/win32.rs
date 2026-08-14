@@ -190,7 +190,7 @@ pub fn write_hdrop(paths: &[String]) -> Result<(), String> {
 
         let _ = GlobalUnlock(hglobal);
 
-        if OpenClipboard(HWND(std::ptr::null_mut())).is_err() {
+        if !open_clipboard_with_retry() {
             let _ = GlobalFree(hglobal);
             return Err("OpenClipboard failed".into());
         }
@@ -297,7 +297,7 @@ pub fn write_html_full(html: &str, alt: &str) -> Result<(), String> {
         *((html_ptr as *mut u8).add(html_bytes.len())) = 0;
         let _ = GlobalUnlock(html_hglobal);
 
-        if OpenClipboard(HWND(std::ptr::null_mut())).is_err() {
+        if !open_clipboard_with_retry() {
             let _ = GlobalFree(alt_hglobal);
             let _ = GlobalFree(html_hglobal);
             return Err("OpenClipboard failed".into());
