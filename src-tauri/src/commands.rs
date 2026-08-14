@@ -88,11 +88,15 @@ pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn clear_history(store: State<Store>) -> Result<(), String> {
+pub fn clear_history(app: AppHandle, store: State<Store>) -> Result<(), String> {
     let paths = store.lock().unwrap_or_else(PoisonError::into_inner).clear_all().map_err(|e| e.to_string())?;
     for path in paths {
         let _ = std::fs::remove_file(path);
     }
+    // Without this, a popup window already open at the time history is
+    // cleared from Settings would keep showing the now-deleted rows until
+    // the next capture event or the next time it's toggled open.
+    let _ = app.emit("history-updated", ());
     Ok(())
 }
 
