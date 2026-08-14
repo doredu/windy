@@ -250,6 +250,7 @@ function stopRecording() {
   hotkeyEl.classList.remove("recording");
   hotkeyRecordEl.classList.remove("recording");
   hotkeyRecordEl.textContent = "Record";
+  hotkeyRecordEl.setAttribute("aria-pressed", "false");
 }
 
 hotkeyRecordEl.addEventListener("click", () => {
@@ -265,6 +266,7 @@ hotkeyRecordEl.addEventListener("click", () => {
   hotkeyEl.classList.add("recording");
   hotkeyRecordEl.classList.add("recording");
   hotkeyRecordEl.textContent = "Cancel";
+  hotkeyRecordEl.setAttribute("aria-pressed", "true");
   hotkeyEl.value = "Press keys…";
 });
 
