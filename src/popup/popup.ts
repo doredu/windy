@@ -602,6 +602,13 @@ onTogglePopup(async (pos) => {
   popupOpen = true;
   selectedIndex = 0;
   searchEl.value = "";
+  // Focus search before refresh()/render() runs so the badge tooltip's
+  // `document.activeElement !== searchEl` check (which decides whether to
+  // show "Press N to select") sees the same focus state that will actually
+  // be in effect once the window is shown, instead of the pre-open focus
+  // target (e.g. body), which made the hint promise a shortcut that the
+  // keydown handler's own searchEl-focus guard would then suppress.
+  searchEl.focus();
   await refresh();
   // `pos` is the already-clamped (screen-edge-aware) position computed in
   // Rust (position.rs, Task 4) — apply it directly, no re-clamping here.
