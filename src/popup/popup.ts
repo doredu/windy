@@ -114,7 +114,7 @@ async function selectAndClose(id: number) {
   await getCurrentWindow().hide();
 }
 
-function applyFilter(resetSelection = true) {
+function applyFilter(resetSelection = true, scroll = resetSelection) {
   clearTimeout(errorTimeout);
   errorEl.classList.remove("visible");
   // Capture the currently-selected item's id before rebuilding `filtered` so
@@ -147,12 +147,12 @@ function applyFilter(resetSelection = true) {
     : query
     ? `${filtered.length} of ${items.length}`
     : `${items.length}`;
-  render();
+  render(scroll);
 }
 
 searchEl.addEventListener("input", () => applyFilter());
 
-function render() {
+function render(scroll = true) {
   // Rebuilding the list below removes the focused node from the document if
   // focus was on a row's delete button (e.g. mid keyboard-driven cleanup),
   // which per DOM spec silently drops focus to <body> with no refocus. Track
@@ -306,7 +306,13 @@ function render() {
     listEl.appendChild(row);
   });
   searchEl.setAttribute("aria-activedescendant", `row-${selectedIndex}`);
-  listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
+  // Only scroll for renders that reflect a real selection change (initial
+  // open, search, keyboard nav, click). A background history-updated refresh
+  // keeps the same selected item (see applyFilter's id re-location above),
+  // so scrolling here would yank the user's manual scroll position back to
+  // the selected row even though nothing they're looking at moved -- the
+  // same class of disruption already avoided for the .time refresh below.
+  if (scroll) listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
   if (focusedDeleteRowIndex !== -1) {
     const restoreIndex = Math.min(focusedDeleteRowIndex, filtered.length - 1);
     listEl.children[restoreIndex]?.querySelector<HTMLButtonElement>(".delete")?.focus();
@@ -342,12 +348,12 @@ function blurFocusedDeleteButton() {
 // list to stale data. A monotonic sequence number lets a resolution detect
 // it's been superseded and bail out instead of overwriting newer state.
 let refreshSeq = 0;
-async function refresh(resetSelection = true) {
+async function refresh(resetSelection = true, scroll = resetSelection) {
   const seq = ++refreshSeq;
   const result = await getHistory();
   if (seq !== refreshSeq) return;
   items = result;
-  applyFilter(resetSelection);
+  applyFilter(resetSelection, scroll);
 }
 
 async function applyTheme() {
