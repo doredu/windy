@@ -261,6 +261,15 @@ fn parse_hotkey(combo: &str) -> Result<(windows::Win32::UI::Input::KeyboardAndMo
                 }
                 vk = Some(key.chars().next().unwrap() as u32);
             }
+            // VK_SPACE == 0x20 -- unlike the letter/digit branch above, the
+            // spacebar has no single-char ASCII representation to reuse, so
+            // it needs its own literal virtual-key code.
+            "SPACE" => {
+                if vk.is_some() {
+                    return Err(format!("multiple keys in \"{combo}\" -- only one non-modifier key is supported"));
+                }
+                vk = Some(0x20);
+            }
             other => return Err(format!("unsupported key \"{other}\" in \"{combo}\"")),
         }
     }
@@ -528,5 +537,12 @@ mod tests {
     #[test]
     fn rejects_unsupported_token() {
         assert!(parse_hotkey("Ctrl+F1").is_err());
+    }
+
+    #[test]
+    fn parses_ctrl_space() {
+        let (mods, vk) = parse_hotkey("Ctrl+SPACE").unwrap();
+        assert_eq!(mods.0, MOD_CONTROL.0 | MOD_NOREPEAT.0);
+        assert_eq!(vk, 0x20);
     }
 }

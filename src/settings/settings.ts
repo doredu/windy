@@ -374,10 +374,13 @@ document.addEventListener("keydown", (e) => {
   // Shift" hint). Prefer the physical key from e.code for letters/digits so
   // Shift+<digit> resolves to the digit instead of failing validation on the
   // shifted symbol.
+  // Space has no single-char e.key/e.code to reuse (e.key is literally " ",
+  // which would fail the letter/digit regex below) -- key off e.code's own
+  // "Space" token instead, same as how physicalMatch keys off KeyX/DigitX.
   const physicalMatch = /^(?:Key([A-Z])|Digit(\d))$/.exec(e.code);
-  const keyChar = physicalMatch ? physicalMatch[1] ?? physicalMatch[2] : e.key;
-  if (!/^[a-zA-Z0-9]$/.test(keyChar)) {
-    hotkeyErrorEl.textContent = `"${e.key}" isn't supported — use a letter or digit`;
+  const keyChar = e.code === "Space" ? "Space" : physicalMatch ? physicalMatch[1] ?? physicalMatch[2] : e.key;
+  if (keyChar !== "Space" && !/^[a-zA-Z0-9]$/.test(keyChar)) {
+    hotkeyErrorEl.textContent = `"${e.key}" isn't supported — use a letter, digit, or Space`;
     return;
   }
   if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
