@@ -96,6 +96,7 @@ function render() {
     const del = document.createElement("button");
     del.className = "delete";
     del.textContent = "×";
+    del.title = "Delete";
     del.onclick = async (e) => {
       e.stopPropagation();
       await deleteItem(item.id);
