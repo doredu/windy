@@ -153,6 +153,22 @@ input[type="color"] {
   cursor: pointer;
 }
 
+.control-row { display: flex; align-items: center; gap: 8px; }
+.control-row input[type="range"] { flex: 1; }
+
+.reset-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 10px;
+  flex-shrink: 0;
+}
+
+.reset-btn:hover { background: rgba(255, 255, 255, 0.08); color: #eee; }
+.reset-btn:active { background: rgba(255, 255, 255, 0.12); }
+
 .checkbox-field {
   display: flex;
   align-items: center;

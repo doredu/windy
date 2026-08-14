@@ -72,15 +72,24 @@
     <section id="panel-appearance" class="tab-panel" data-panel="appearance" role="tabpanel" aria-labelledby="tab-appearance">
       <div class="field">
         <label for="popupOpacity">Popup opacity <span id="popupOpacityValue"></span></label>
-        <input id="popupOpacity" type="range" min="30" max="100" step="1">
+        <div class="control-row">
+          <input id="popupOpacity" type="range" min="30" max="100" step="1">
+          <button type="button" id="resetOpacity" class="reset-btn" title="Reset to default (90%)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="popupBgColor">Popup background color <span id="popupBgColorValue" class="hex-value"></span></label>
-        <input id="popupBgColor" type="color">
+        <div class="control-row">
+          <input id="popupBgColor" type="color">
+          <button type="button" id="resetBgColor" class="reset-btn" title="Reset to default (#1E1E22)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="popupAccentColor">Popup accent color <span id="popupAccentColorValue" class="hex-value"></span></label>
-        <input id="popupAccentColor" type="color">
+        <div class="control-row">
+          <input id="popupAccentColor" type="color">
+          <button type="button" id="resetAccentColor" class="reset-btn" title="Reset to default (#FFFFFF)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="popupPosition">Position</label>

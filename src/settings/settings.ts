@@ -32,6 +32,9 @@ const bgColorEl = document.getElementById("popupBgColor") as HTMLInputElement;
 const bgColorValueEl = document.getElementById("popupBgColorValue")!;
 const accentColorEl = document.getElementById("popupAccentColor") as HTMLInputElement;
 const accentColorValueEl = document.getElementById("popupAccentColorValue")!;
+const resetOpacityEl = document.getElementById("resetOpacity") as HTMLButtonElement;
+const resetBgColorEl = document.getElementById("resetBgColor") as HTMLButtonElement;
+const resetAccentColorEl = document.getElementById("resetAccentColor") as HTMLButtonElement;
 const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectElement;
 const popupPinEl = document.getElementById("popupPin") as HTMLSelectElement;
 const clearHistoryOnQuitEl = document.getElementById("clearHistoryOnQuit") as HTMLInputElement;
@@ -117,6 +120,29 @@ bgColorEl.addEventListener("input", () => {
 });
 accentColorEl.addEventListener("input", () => {
   accentColorValueEl.textContent = accentColorEl.value;
+});
+
+// Matches the backend's built-in defaults (store.rs ensure_defaults) --
+// once a user customizes these, there was previously no way back short of
+// manually re-entering "90", "#1E1E22", "#FFFFFF" from memory.
+const DEFAULT_POPUP_OPACITY = "90";
+const DEFAULT_POPUP_BG_COLOR = "#1e1e22";
+const DEFAULT_POPUP_ACCENT_COLOR = "#ffffff";
+
+resetOpacityEl.addEventListener("click", () => {
+  opacityEl.value = DEFAULT_POPUP_OPACITY;
+  opacityValueEl.textContent = `${opacityEl.value}%`;
+  dirty = true;
+});
+resetBgColorEl.addEventListener("click", () => {
+  bgColorEl.value = DEFAULT_POPUP_BG_COLOR;
+  bgColorValueEl.textContent = bgColorEl.value;
+  dirty = true;
+});
+resetAccentColorEl.addEventListener("click", () => {
+  accentColorEl.value = DEFAULT_POPUP_ACCENT_COLOR;
+  accentColorValueEl.textContent = accentColorEl.value;
+  dirty = true;
 });
 
 for (const el of [maxItemsEl, retentionEl]) {
