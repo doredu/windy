@@ -126,6 +126,12 @@ fn main() {
                     }
                     "settings" => {
                         if let Some(w) = app.get_webview_window("settings") {
+                            // On Windows, show() alone doesn't restore a
+                            // minimized window -- it stays minimized in the
+                            // taskbar even though is_visible() reports true,
+                            // so clicking the tray's "Settings" item again
+                            // would silently appear to do nothing.
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         } else {
