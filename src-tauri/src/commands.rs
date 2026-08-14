@@ -30,6 +30,11 @@ pub struct HistoryItemDto {
     // `preview` snippet. `None` for kinds where `preview` already covers
     // everything searchable (files, images).
     pub search_text: Option<String>,
+    // Full (untruncated), original-case text content for text/richtext
+    // items, used by the popup's hover tooltip so it can show more than the
+    // same 120-char `preview` snippet the row already displays. `None` for
+    // kinds where `preview` already covers everything (files, images).
+    pub full_text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -303,6 +308,11 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
             .map(|paths| paths.join("\n").to_lowercase()),
         _ => None,
     };
+    let full_text = match item.kind.as_str() {
+        "text" => item.content.clone(),
+        "richtext" => item.content_alt.clone(),
+        _ => None,
+    };
     HistoryItemDto {
         id: item.id,
         kind: item.kind,
@@ -313,6 +323,7 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
         first_copied_at: item.first_copied_at,
         copy_count,
         search_text,
+        full_text,
     }
 }
 
