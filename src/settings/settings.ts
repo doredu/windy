@@ -265,6 +265,7 @@ form.addEventListener("submit", async (e) => {
 clearHistoryBtn.addEventListener("click", async () => {
   if (!confirm("Delete all clipboard history? This can't be undone.")) return;
   clearHistoryBtn.disabled = true;
+  clearHistoryBtn.textContent = "Clearing…";
   try {
     await clearHistory();
     clearHistoryStatusEl.textContent = "History cleared";
@@ -272,6 +273,7 @@ clearHistoryBtn.addEventListener("click", async () => {
     clearHistoryStatusEl.textContent = String(err);
   } finally {
     clearHistoryBtn.disabled = false;
+    clearHistoryBtn.textContent = "Clear all history";
     setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
   }
 });
