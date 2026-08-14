@@ -42,6 +42,7 @@ const listEl = document.getElementById("list")!;
 const searchEl = document.getElementById("search") as HTMLInputElement;
 const clearSearchEl = document.getElementById("clear-search")!;
 const countEl = document.getElementById("count")!;
+const errorEl = document.getElementById("error")!;
 let items: HistoryItemDto[] = [];
 let filtered: HistoryItemDto[] = [];
 let selectedIndex = 0;
@@ -56,7 +57,28 @@ clearSearchEl.addEventListener("click", () => {
   searchEl.focus();
 });
 
+// `select_item`/`delete_item` can fail (e.g. the item was deleted
+// concurrently, or the OS clipboard write failed) -- without surfacing
+// that, the popup would just silently stay open (select) or appear to do
+// nothing (delete), the same class of silent-failure bug fixed in Settings
+// (save errors, capture-type validation).
+function showError(err: unknown) {
+  errorEl.textContent = String(err);
+  errorEl.classList.add("visible");
+}
+
+async function selectAndClose(id: number) {
+  try {
+    await selectItem(id);
+  } catch (err) {
+    showError(err);
+    return;
+  }
+  await getCurrentWindow().hide();
+}
+
 function applyFilter(resetSelection = true) {
+  errorEl.classList.remove("visible");
   const query = searchEl.value.trim().toLowerCase();
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
   if (resetSelection) selectedIndex = 0;
@@ -122,7 +144,12 @@ function render() {
     del.setAttribute("aria-label", "Delete");
     del.onclick = async (e) => {
       e.stopPropagation();
-      await deleteItem(item.id);
+      try {
+        await deleteItem(item.id);
+      } catch (err) {
+        showError(err);
+        return;
+      }
       // `delete_item` doesn't emit `history-updated` (that event only fires
       // on new clipboard captures), so refresh locally to drop the row now
       // instead of waiting for the next backend event.
@@ -130,10 +157,7 @@ function render() {
     };
     row.appendChild(del);
 
-    row.onclick = async () => {
-      await selectItem(item.id);
-      await getCurrentWindow().hide();
-    };
+    row.onclick = () => selectAndClose(item.id);
 
     // Keep keyboard selection (used by Enter/scrollIntoView) in sync with
     // the mouse -- otherwise hovering a different row than the last
@@ -222,8 +246,7 @@ document.addEventListener("keydown", async (e) => {
   }
   if (e.key === "Enter") {
     if (!filtered[selectedIndex]) return;
-    await selectItem(filtered[selectedIndex].id);
-    await getCurrentWindow().hide();
+    await selectAndClose(filtered[selectedIndex].id);
     return;
   }
   // Delete key removes the selected row, mirroring the per-row × button, so
@@ -234,7 +257,12 @@ document.addEventListener("keydown", async (e) => {
     if (document.activeElement === searchEl) return;
     if (!filtered[selectedIndex]) return;
     e.preventDefault();
-    await deleteItem(filtered[selectedIndex].id);
+    try {
+      await deleteItem(filtered[selectedIndex].id);
+    } catch (err) {
+      showError(err);
+      return;
+    }
     await refresh(false);
     return;
   }
@@ -244,8 +272,7 @@ document.addEventListener("keydown", async (e) => {
   if (document.activeElement === searchEl) return;
   const n = Number(e.key);
   if (Number.isInteger(n) && n >= 1 && n <= 9 && filtered[n - 1]) {
-    await selectItem(filtered[n - 1].id);
-    await getCurrentWindow().hide();
+    await selectAndClose(filtered[n - 1].id);
   }
 });
 
