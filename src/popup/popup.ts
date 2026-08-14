@@ -321,16 +321,18 @@ async function applyTheme() {
   // --popup-accent-bg/--popup-accent-color are set inline here unconditionally,
   // which means the var(--popup-accent-color, <fallback>) fallbacks used by
   // light-bg CSS rules (e.g. .badge in popup.css) never actually apply -- the
-  // property is always defined. When the popup background is light AND the
-  // accent color is still its light default (#ffffff), a low-alpha white tint
-  // on a light background is invisible, wiping out the row hover/active
-  // highlight, the search-focus border, and the .badge accent color all at
-  // once. Fall back to a dark tint in that case instead of relying on dead
-  // CSS fallbacks.
+  // property is always defined. When the popup background and the accent
+  // color share the same lightness (both light, e.g. white-on-white, or both
+  // dark, e.g. near-black-on-near-black), a low-alpha tint of the accent
+  // color on a same-lightness background is invisible or near-invisible,
+  // wiping out the row hover/active highlight, the search-focus border, the
+  // .badge/.copy-count text, and the focus-visible outline all at once. Fall
+  // back to a tint contrasting with the *background* in that case instead of
+  // relying on dead CSS fallbacks.
   const bgIsLight = isLightColor(settings.popup_bg_color);
-  if (bgIsLight && isLightColor(settings.popup_accent_color)) {
-    root.setProperty("--popup-accent-bg", "rgba(0,0,0,0.08)");
-    root.setProperty("--popup-accent-color", "rgba(0,0,0,0.55)");
+  if (bgIsLight === isLightColor(settings.popup_accent_color)) {
+    root.setProperty("--popup-accent-bg", bgIsLight ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)");
+    root.setProperty("--popup-accent-color", bgIsLight ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.75)");
   } else {
     // Fixed alpha, independent of the opacity slider (which only controls the
     // popup background) -- matches the original hardcoded hover look
