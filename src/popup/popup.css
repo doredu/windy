@@ -8,6 +8,7 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--popup-b
 #clear-search { display: none; width: 20px; height: 20px; line-height: 18px; padding: 0; background: none; border: none; border-radius: 4px; color: #eee; font-size: 15px; cursor: pointer; opacity: 0.6; flex-shrink: 0; }
 #clear-search.visible { display: block; }
 #clear-search:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+#count { font-size: 11px; color: rgba(255,255,255,0.4); flex-shrink: 0; padding: 0 2px; white-space: nowrap; }
 #list { max-height: 300px; overflow-y: auto; }
 #list::-webkit-scrollbar { width: 8px; }
 #list::-webkit-scrollbar-track { background: transparent; }

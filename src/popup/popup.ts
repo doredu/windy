@@ -40,6 +40,7 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
 const listEl = document.getElementById("list")!;
 const searchEl = document.getElementById("search") as HTMLInputElement;
 const clearSearchEl = document.getElementById("clear-search")!;
+const countEl = document.getElementById("count")!;
 let items: HistoryItemDto[] = [];
 let filtered: HistoryItemDto[] = [];
 let selectedIndex = 0;
@@ -59,6 +60,11 @@ function applyFilter() {
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
   selectedIndex = 0;
   clearSearchEl.classList.toggle("visible", searchEl.value.length > 0);
+  countEl.textContent = query
+    ? `${filtered.length} of ${items.length}`
+    : items.length
+    ? `${items.length}`
+    : "";
   render();
 }
 
