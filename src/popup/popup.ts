@@ -138,11 +138,15 @@ function applyFilter(resetSelection = true) {
   // Empty-history previously left #count blank, so the aria-live region
   // (iteration 22) never announced anything to screen reader users -- unlike
   // the "0 of N" case for a search with no matches, which is announced fine.
-  countEl.textContent = query
+  // Check items.length first: with an empty history, typing a search query
+  // previously announced "0 of 0" (read as "no results for your search"),
+  // which misleads screen-reader users into thinking a retry might help when
+  // there's actually no history to search at all.
+  countEl.textContent = items.length === 0
+    ? "No items"
+    : query
     ? `${filtered.length} of ${items.length}`
-    : items.length
-    ? `${items.length}`
-    : "No items";
+    : `${items.length}`;
   render();
 }
 
