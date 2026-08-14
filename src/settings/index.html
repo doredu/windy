@@ -7,13 +7,13 @@
     <button type="button" id="updateAction"></button>
   </div>
   <div class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="general" role="tab">General</button>
-    <button type="button" class="tab" data-tab="storage" role="tab">Storage</button>
-    <button type="button" class="tab" data-tab="appearance" role="tab">Appearance</button>
-    <button type="button" class="tab" data-tab="advanced" role="tab">Advanced</button>
+    <button type="button" id="tab-general" class="tab active" data-tab="general" role="tab" aria-selected="true" aria-controls="panel-general">General</button>
+    <button type="button" id="tab-storage" class="tab" data-tab="storage" role="tab" aria-selected="false" aria-controls="panel-storage">Storage</button>
+    <button type="button" id="tab-appearance" class="tab" data-tab="appearance" role="tab" aria-selected="false" aria-controls="panel-appearance">Appearance</button>
+    <button type="button" id="tab-advanced" class="tab" data-tab="advanced" role="tab" aria-selected="false" aria-controls="panel-advanced">Advanced</button>
   </div>
   <form id="form">
-    <section class="tab-panel active" data-panel="general">
+    <section id="panel-general" class="tab-panel active" data-panel="general" role="tabpanel" aria-labelledby="tab-general">
       <label class="checkbox-field">
         <input id="startWithWindows" type="checkbox">
         Start with Windows
@@ -32,7 +32,7 @@
       </label>
     </section>
 
-    <section class="tab-panel" data-panel="storage">
+    <section id="panel-storage" class="tab-panel" data-panel="storage" role="tabpanel" aria-labelledby="tab-storage">
       <div class="field">
         <label for="maxItems">Max items</label>
         <input id="maxItems" type="number" min="1" placeholder="Unlimited">
@@ -58,7 +58,7 @@
       </div>
     </section>
 
-    <section class="tab-panel" data-panel="appearance">
+    <section id="panel-appearance" class="tab-panel" data-panel="appearance" role="tabpanel" aria-labelledby="tab-appearance">
       <div class="field">
         <label for="popupOpacity">Popup opacity <span id="popupOpacityValue"></span></label>
         <input id="popupOpacity" type="range" min="30" max="100" step="1">
@@ -89,7 +89,7 @@
       </div>
     </section>
 
-    <section class="tab-panel" data-panel="advanced">
+    <section id="panel-advanced" class="tab-panel" data-panel="advanced" role="tabpanel" aria-labelledby="tab-advanced">
       <label class="checkbox-field">
         <input id="clearHistoryOnQuit" type="checkbox">
         Clear history on quit
