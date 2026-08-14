@@ -423,8 +423,17 @@ document.addEventListener("keydown", async (e) => {
     // control currently has focus (search box, close button, a row's
     // delete button, etc.) so Escape behaves consistently.
     if (searchEl.value) {
+      // Clearing the query hides #clear-search (display:none via the
+      // .visible class toggle in applyFilter()) -- if it currently has
+      // focus, clearing it would silently drop focus to <body> per the DOM
+      // spec, the same "focus lands on a now-hidden element" hazard the
+      // delete-button focus-restore logic already guards against. Move
+      // focus to the search box first, mirroring clearSearchEl's own click
+      // handler above.
+      const hadClearFocus = document.activeElement === clearSearchEl;
       searchEl.value = "";
       applyFilter();
+      if (hadClearFocus) searchEl.focus();
       return;
     }
     popupOpen = false;
