@@ -745,9 +745,15 @@ loadUpdateStatus();
 // we don't clobber in-progress form changes.
 async function refreshLiveState() {
   if (dirty) return;
-  const settings = await getSettings();
-  autostartEl.checked = settings.start_with_windows;
-  hotkeyInactiveWarningEl.classList.toggle("hidden", settings.hotkey_active !== false);
+  try {
+    const settings = await getSettings();
+    autostartEl.checked = settings.start_with_windows;
+    hotkeyInactiveWarningEl.classList.toggle("hidden", settings.hotkey_active !== false);
+  } catch {
+    // Transient IPC/store error -- leave the previous UI state intact and
+    // let the next window-focus event retry, mirroring loadUpdateStatus()'s
+    // guard above for the same unattended, fire-and-forget trigger.
+  }
 }
 
 onWindowFocusChanged((focused) => {
