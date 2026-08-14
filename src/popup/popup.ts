@@ -243,7 +243,14 @@ function render() {
     }
 
     const del = document.createElement("button");
-    del.className = "delete";
+    // `.delete` is `visibility: hidden` at rest, only shown via :hover/.active/
+    // :focus-visible (popup.css). A visibility:hidden element can't receive
+    // focus at all (per DOM spec), so when this row is the target of the
+    // focus-restore below but isn't the (possibly different) selectedIndex
+    // row, mark it explicitly visible so the .focus() call two blocks down
+    // actually lands instead of silently no-oping and dropping focus to
+    // <body> -- see the focusedDeleteRowIndex tracking above.
+    del.className = i === focusedDeleteRowIndex ? "delete focus-target" : "delete";
     del.textContent = "×";
     // Mirror the badge's "Press N to select" hover hint (above) so the Delete
     // key shortcut is discoverable from the row itself, not just the × click.

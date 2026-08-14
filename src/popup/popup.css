@@ -27,6 +27,10 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--popup-b
 .delete { visibility: hidden; background: none; border: none; border-radius: 3px; color: #eee; opacity: 0.6; cursor: pointer; font-size: 14px; }
 .delete:hover { opacity: 1; color: #ff6b6b; background: rgba(255,255,255,0.1); }
 .delete:focus-visible { visibility: visible; }
+/* Set by popup.ts on the specific row being restored keyboard focus to
+   (which may differ from the hover/selection-active row) so it's visible
+   -- and therefore actually focusable -- before .focus() is called. */
+.delete.focus-target { visibility: visible; }
 #search:focus-visible, #close:focus-visible, #clear-search:focus-visible, .delete:focus-visible {
   outline: 2px solid var(--popup-accent-color, #4f8cff);
   outline-offset: 1px;
