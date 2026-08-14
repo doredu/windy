@@ -100,8 +100,12 @@ pub fn get_history(store: State<Store>) -> Result<Vec<HistoryItemDto>, String> {
 
 #[tauri::command]
 pub fn select_item(id: i64, store: State<Store>) -> Result<(), String> {
-    let history = store.lock().unwrap_or_else(PoisonError::into_inner).get_history().map_err(|e| e.to_string())?;
-    let item = history.into_iter().find(|i| i.id == id).ok_or("item not found")?;
+    let item = store
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_item(id)
+        .map_err(|e| e.to_string())?
+        .ok_or("item not found")?;
     crate::clipboard_io::write_item_to_clipboard(&item)
 }
 

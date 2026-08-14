@@ -424,7 +424,7 @@ mod tests {
     }
 }
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub struct HistoryItem {
     pub id: i64,
@@ -685,6 +685,34 @@ impl HistoryStore {
             })
         })?;
         rows.collect()
+    }
+
+    /// Looks up a single row by id regardless of the retention-days cutoff,
+    /// mirroring delete_item's unfiltered lookup -- unlike get_history_sorted,
+    /// this must still find an item that's still visible in an already-open
+    /// popup even if it has aged out of the retention window.
+    pub fn get_item(&self, id: i64) -> rusqlite::Result<Option<HistoryItem>> {
+        self.conn
+            .query_row(
+                "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at, first_copied_at, copy_count
+                 FROM items WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        kind: row.get(1)?,
+                        content: row.get(2)?,
+                        content_alt: row.get(3)?,
+                        image_path: row.get(4)?,
+                        thumb_path: row.get(5)?,
+                        preview: row.get(6)?,
+                        created_at: row.get(7)?,
+                        first_copied_at: row.get(8)?,
+                        copy_count: row.get(9)?,
+                    })
+                },
+            )
+            .optional()
     }
 
     /// Deletes the row and returns every on-disk path (full image and/or
