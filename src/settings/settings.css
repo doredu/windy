@@ -85,6 +85,10 @@ input[type="text"]#hotkey.recording {
   color: rgba(255, 255, 255, 0.5);
 }
 
+input[type="text"]#hotkey:focus-visible {
+  border-color: #4f8cff;
+}
+
 .hotkey-row button {
   padding: 6px 12px;
   font-size: 12px;
