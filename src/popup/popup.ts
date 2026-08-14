@@ -404,10 +404,23 @@ document.addEventListener("keydown", async (e) => {
   // while editing the query.
   if (e.key === "Delete") {
     if (document.activeElement === searchEl) return;
-    if (!filtered[selectedIndex]) return;
+    // Tabbing focuses a row's delete button independently of selectedIndex
+    // (which only tracks arrow-key/mouse-hover selection) -- deleting
+    // filtered[selectedIndex] in that case would silently remove a
+    // different row than the one the focus ring is actually on. Resolve
+    // the target from the focused delete button when present, falling back
+    // to selectedIndex otherwise (arrow-key/mouse-driven selection).
+    let targetIndex = selectedIndex;
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.classList.contains("delete")) {
+      const row = active.closest(".row");
+      const rowIndex = row ? Array.from(listEl.children).indexOf(row) : -1;
+      if (rowIndex !== -1) targetIndex = rowIndex;
+    }
+    if (!filtered[targetIndex]) return;
     e.preventDefault();
     try {
-      await deleteItem(filtered[selectedIndex].id);
+      await deleteItem(filtered[targetIndex].id);
     } catch (err) {
       showError(err);
       return;
