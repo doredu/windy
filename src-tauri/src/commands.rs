@@ -235,6 +235,19 @@ pub fn set_settings(
     // another app, bail before writing anything, so a failed save can never
     // leave a partial set of fields (e.g. max_items) silently committed
     // while the UI reports the whole save as failed.
+    //
+    // Unlike the DB writes below, this has no natural rollback: RegisterHotKey
+    // takes effect on the OS immediately and isn't part of the sqlite
+    // transaction. So if a *later* fallible step (autostart) fails, the live
+    // hotkey registration would otherwise be left pointing at the new combo
+    // while get_settings/the DB/the tray label all still report the old one
+    // -- silently splitting "what's registered" from "what's displayed" until
+    // the next successful save or app restart. Remember the previous combo so
+    // that case can be explicitly reverted below.
+    let previous_hotkey = {
+        let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+        s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into())
+    };
     hotkey.rebind(settings.hotkey.clone())?;
 
     // Same reasoning applies to the OS autostart registration: it's the only
@@ -247,10 +260,18 @@ pub fn set_settings(
     // saved. Attempt it first so a failure aborts before anything is written.
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
-    if settings.start_with_windows {
-        autostart.enable().map_err(|e| e.to_string())?;
+    let autostart_result = if settings.start_with_windows {
+        autostart.enable().map_err(|e| e.to_string())
     } else {
-        autostart.disable().map_err(|e| e.to_string())?;
+        autostart.disable().map_err(|e| e.to_string())
+    };
+    if let Err(e) = autostart_result {
+        // Best-effort revert so the live hotkey registration doesn't outlive
+        // the failed save -- if this also fails, the user is left with a
+        // stale-but-consistent warning next time Settings polls hotkey_active
+        // rather than a silently mismatched combo.
+        let _ = hotkey.rebind(previous_hotkey);
+        return Err(e);
     }
 
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
