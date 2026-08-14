@@ -311,6 +311,13 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
     let full_text = match item.kind.as_str() {
         "text" => item.content.clone(),
         "richtext" => item.content_alt.clone(),
+        "files" => item.content.as_deref().and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).map(|paths| {
+            paths
+                .iter()
+                .map(|p| std::path::Path::new(p).file_name().and_then(|n| n.to_str()).unwrap_or(p.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }),
         _ => None,
     };
     HistoryItemDto {
@@ -561,5 +568,23 @@ mod tests {
         let search_text = history_item_to_dto(item).search_text.unwrap();
         assert!(search_text.contains("invoice.pdf"));
         assert!(search_text.contains("notes.txt"));
+    }
+
+    #[test]
+    fn dto_conversion_populates_full_text_for_files_with_every_file_name() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(r#"["C:\\Docs\\Invoice.pdf","C:\\Docs\\Notes.txt","C:\\Docs\\Extra.txt"]"#.into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "3 files: Invoice.pdf, Notes.txt, Ex".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let full_text = history_item_to_dto(item).full_text.unwrap();
+        assert_eq!(full_text, "Invoice.pdf, Notes.txt, Extra.txt");
     }
 }
