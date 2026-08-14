@@ -104,6 +104,10 @@ fn main() {
             app.manage(commands::TrayMenu { open_history: open_history.clone() });
 
             let mut tray_builder = tauri::tray::TrayIconBuilder::new()
+                // Without a tooltip, hovering the tray icon (e.g. to find it
+                // among several similar-looking icons in the notification
+                // area) gives no indication of which app it is.
+                .tooltip("Clipboard Manager")
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open_history" => {
