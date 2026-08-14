@@ -321,6 +321,28 @@ mod tests {
     }
 
     #[test]
+    fn get_history_sorted_excludes_items_older_than_retention_days_without_a_new_capture() {
+        let store = mem_store();
+        store.set_setting("retention_days", "1").unwrap();
+        store.capture(text_item("stale")).unwrap();
+        store.capture(text_item("fresh")).unwrap();
+        // Simulate the "stale" item having been captured 2 days ago, with no
+        // subsequent capture (and therefore no prune()) ever happening --
+        // get_history_sorted must still exclude it at read time.
+        let two_days_ago = now_ms() - 2 * 24 * 60 * 60 * 1000;
+        store
+            .conn
+            .execute(
+                "UPDATE items SET created_at = ?1 WHERE content = 'stale'",
+                params![two_days_ago],
+            )
+            .unwrap();
+        let history = store.get_history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].content.as_deref(), Some("fresh"));
+    }
+
+    #[test]
     fn clear_all_removes_every_row_and_returns_image_paths() {
         let store = mem_store();
         let dir = std::env::temp_dir().join(format!("cm-clearall-test-{}", std::process::id()));
@@ -632,12 +654,16 @@ impl HistoryStore {
     }
 
     pub fn get_history_sorted(&self, mode: &SortMode) -> rusqlite::Result<Vec<HistoryItem>> {
+        let cutoff = self
+            .get_setting("retention_days")?
+            .and_then(|v| v.parse::<i64>().ok())
+            .map(|days| now_ms() - days * 24 * 60 * 60 * 1000);
         let mut stmt = self.conn.prepare(&format!(
             "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at, first_copied_at, copy_count
-             FROM items ORDER BY {}",
+             FROM items WHERE created_at >= ?1 ORDER BY {}",
             mode.order_by()
         ))?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![cutoff.unwrap_or(i64::MIN)], |row| {
             Ok(HistoryItem {
                 id: row.get(0)?,
                 kind: row.get(1)?,
