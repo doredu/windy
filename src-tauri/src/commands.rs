@@ -238,12 +238,17 @@ pub fn set_settings(
         .map_err(|e| e.to_string())?;
     drop(s);
 
+    // Previously `let _ = autostart.enable()/.disable()` discarded any error
+    // (e.g. registry write denied) -- the checkbox and stored setting would
+    // then silently disagree with the actual OS autostart registration, with
+    // no feedback anywhere that "Start with Windows" didn't really take
+    // effect. Surface the failure like every other settings field instead.
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
     if settings.start_with_windows {
-        let _ = autostart.enable();
+        autostart.enable().map_err(|e| e.to_string())?;
     } else {
-        let _ = autostart.disable();
+        autostart.disable().map_err(|e| e.to_string())?;
     }
 
     let _ = app.emit("settings-updated", ());
