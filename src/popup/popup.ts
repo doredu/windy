@@ -216,7 +216,7 @@ function render() {
     // Mirror the badge's "Press N to select" hover hint (above) so the Delete
     // key shortcut is discoverable from the row itself, not just the × click.
     del.title = "Delete (or press Del)";
-    del.setAttribute("aria-label", "Delete");
+    del.setAttribute("aria-label", `Delete "${item.preview.slice(0, 40)}"`);
     del.onclick = async (e) => {
       e.stopPropagation();
       try {
