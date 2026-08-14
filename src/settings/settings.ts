@@ -46,6 +46,7 @@ const resetMaxItemsEl = document.getElementById("resetMaxItems") as HTMLButtonEl
 const resetRetentionDaysEl = document.getElementById("resetRetentionDays") as HTMLButtonElement;
 const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectElement;
 const popupPinEl = document.getElementById("popupPin") as HTMLSelectElement;
+const popupPinHintEl = document.getElementById("popupPinHint") as HTMLSpanElement;
 const clearHistoryOnQuitEl = document.getElementById("clearHistoryOnQuit") as HTMLInputElement;
 const clearClipboardOnQuitEl = document.getElementById("clearClipboardOnQuit") as HTMLInputElement;
 const clearHistoryBtn = document.getElementById("clearHistoryBtn") as HTMLButtonElement;
@@ -117,6 +118,19 @@ clearHistoryOnQuitEl.addEventListener("change", () => {
   clearClipboardOnQuitEl.disabled = !clearHistoryOnQuitEl.checked;
   if (!clearHistoryOnQuitEl.checked) clearClipboardOnQuitEl.checked = false;
 });
+
+// "Bottom-right corner" already anchors the popup to the screen's bottom
+// edge, so position.rs's on-screen clamp forces both Pin options to the
+// exact same y-coordinate for that mode -- Pin has no visible effect there.
+// Disable it instead of leaving a dead control that appears to do something.
+function updatePinAvailability() {
+  const disabled = popupPositionEl.value === "bottom_right";
+  popupPinEl.disabled = disabled;
+  popupPinHintEl.textContent = disabled
+    ? "Not used for Bottom-right corner: the popup always sits above the bottom edge there"
+    : "Whether the popup opens below or above the chosen Position point";
+}
+popupPositionEl.addEventListener("change", updatePinAvailability);
 
 opacityEl.addEventListener("input", () => {
   opacityValueEl.textContent = `${opacityEl.value}%`;
@@ -241,6 +255,7 @@ async function load() {
   accentColorValueEl.textContent = settings.popup_accent_color;
   popupPositionEl.value = settings.popup_position;
   popupPinEl.value = settings.popup_pin;
+  updatePinAvailability();
   clearHistoryOnQuitEl.checked = settings.clear_history_on_quit;
   clearClipboardOnQuitEl.checked = settings.clear_clipboard_on_quit;
   clearClipboardOnQuitEl.disabled = !settings.clear_history_on_quit;
