@@ -16,6 +16,7 @@ pub struct HistoryItemDto {
     pub thumbnail: Option<String>,
     pub size: Option<String>,
     pub created_at: i64,
+    pub copy_count: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -214,6 +215,7 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
             .map(|bytes| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
     });
     let size = item_size(&item);
+    let copy_count = item.copy_count;
     HistoryItemDto {
         id: item.id,
         kind: item.kind,
@@ -221,6 +223,7 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
         thumbnail,
         size,
         created_at: item.created_at,
+        copy_count,
     }
 }
 

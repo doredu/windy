@@ -177,6 +177,19 @@ function render() {
     time.title = new Date(item.created_at).toLocaleString();
     row.appendChild(time);
 
+    // copy_count is only meaningful once an item has been copied more than
+    // once -- surfacing it always would clutter every row for no benefit,
+    // and it's the only visible signal for what "Sort by: Number of copies"
+    // (Settings > Storage) is even sorting on, which was previously
+    // invisible in the popup despite the backend already tracking it.
+    if (item.copy_count > 1) {
+      const copyCount = document.createElement("span");
+      copyCount.className = "copy-count";
+      copyCount.textContent = `×${item.copy_count}`;
+      copyCount.title = `Copied ${item.copy_count} times`;
+      row.appendChild(copyCount);
+    }
+
     const del = document.createElement("button");
     del.className = "delete";
     del.textContent = "×";

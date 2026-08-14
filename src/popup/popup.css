@@ -23,6 +23,7 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--popup-b
 .preview { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .size { font-size: 11px; opacity: 0.5; flex-shrink: 0; }
 .time { font-size: 11px; opacity: 0.5; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.copy-count { font-size: 11px; opacity: 0.6; flex-shrink: 0; color: var(--popup-accent-color, inherit); font-variant-numeric: tabular-nums; }
 .delete { visibility: hidden; background: none; border: none; border-radius: 3px; color: #eee; opacity: 0.6; cursor: pointer; font-size: 14px; }
 .delete:hover { opacity: 1; color: #ff6b6b; background: rgba(255,255,255,0.1); }
 .delete:focus-visible { visibility: visible; }
@@ -44,6 +45,7 @@ html.light-bg #count { color: rgba(0,0,0,0.45); }
 html.light-bg .badge { color: var(--popup-accent-color, rgba(0,0,0,0.55)); }
 html.light-bg .size { color: rgba(0,0,0,0.5); }
 html.light-bg .time { color: rgba(0,0,0,0.5); }
+html.light-bg .copy-count { color: var(--popup-accent-color, rgba(0,0,0,0.55)); }
 html.light-bg .delete { color: #1e1e22; }
 html.light-bg .delete:hover { color: #d13a3a; background: rgba(0,0,0,0.08); }
 html.light-bg .empty { color: rgba(0,0,0,0.45); }

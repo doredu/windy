@@ -12,6 +12,7 @@ export interface HistoryItemDto {
   thumbnail: string | null;
   size: string | null;
   created_at: number;
+  copy_count: number;
 }
 
 export type SortMode = "last_copied" | "first_copied" | "most_copied";
