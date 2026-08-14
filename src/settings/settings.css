@@ -157,6 +157,7 @@ select {
 
 select:hover { background: rgba(255, 255, 255, 0.09); }
 select:focus { border-color: #4f8cff; background: rgba(255, 255, 255, 0.09); }
+select:disabled { opacity: 0.5; cursor: not-allowed; }
 
 input[type="range"] {
   width: 100%;
