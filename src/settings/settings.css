@@ -164,6 +164,19 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+/* clearClipboardOnQuitEl is programmatically disabled when "Clear history on
+   quit" is unchecked (settings.ts), but the label wrapping it kept full
+   opacity and a pointer cursor -- same "disabled control looks clickable"
+   gap fixed for buttons above, just for a dependent checkbox instead. */
+.checkbox-field:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-field:has(input:disabled) input {
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   align-items: center;
