@@ -62,52 +62,56 @@ pub fn capture_current_clipboard(image_capture_enabled: bool) -> Option<NewItem>
     // itself. Plain file copies (e.g. from File Explorer) don't place image
     // data on the clipboard, so this reordering doesn't affect that case.
     if let Ok(image) = retry(|| clipboard.get_image()) {
-        // Bail out before touching the filesystem when the user has
-        // disabled "Image" capture -- resizing/writing the PNG + thumbnail
-        // below happens unconditionally otherwise, silently leaving orphan
-        // files on disk with no store row to ever reference or prune them.
-        if !image_capture_enabled {
-            return None;
-        }
-        let (w, h) = (image.width as u32, image.height as u32);
-        let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
-        let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
-        let img_buf = image::RgbaImage::from_raw(w, h, image.bytes.into_owned())?;
-        let resized = image::imageops::resize(&img_buf, out_w.max(1), out_h.max(1), image::imageops::FilterType::Triangle);
+        // When "Image" capture is disabled, skip the image-specific
+        // handling below (so we don't touch the filesystem writing PNG +
+        // thumbnail files unconditionally, which would leave orphan files
+        // on disk with no store row to ever reference or prune them) but
+        // still fall through to the CF_HDROP/CF_HTML/CF_UNICODETEXT checks
+        // below -- some apps (e.g. Excel/Word, browsers' image context
+        // menus) place image bytes alongside real text/file data on the
+        // same clipboard snapshot, and that data should still be captured
+        // if its own capture type is enabled.
+        if image_capture_enabled {
+            let (w, h) = (image.width as u32, image.height as u32);
+            let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
+            let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
+            let img_buf = image::RgbaImage::from_raw(w, h, image.bytes.into_owned())?;
+            let resized = image::imageops::resize(&img_buf, out_w.max(1), out_h.max(1), image::imageops::FilterType::Triangle);
 
-        // Dedup/filename are derived from an actual hash of the resized
-        // pixel content, not a randomly generated UUID -- so the same
-        // image copied twice (including writing an item back to the OS
-        // clipboard on selection, which re-triggers capture) hashes to the
-        // same key and reuses the same file instead of growing without
-        // bound. Content-addressing the filename also means a duplicate
-        // never gets written to disk twice: the `path.exists()` check
-        // below skips the write entirely.
-        let hash = sha256_hex(resized.as_raw());
-        let dir = crate::win32::images_dir();
-        std::fs::create_dir_all(&dir).ok()?;
-        let path = dir.join(format!("{hash}.png"));
-        if !path.exists() {
-            resized.save(&path).ok()?;
-        }
+            // Dedup/filename are derived from an actual hash of the resized
+            // pixel content, not a randomly generated UUID -- so the same
+            // image copied twice (including writing an item back to the OS
+            // clipboard on selection, which re-triggers capture) hashes to the
+            // same key and reuses the same file instead of growing without
+            // bound. Content-addressing the filename also means a duplicate
+            // never gets written to disk twice: the `path.exists()` check
+            // below skips the write entirely.
+            let hash = sha256_hex(resized.as_raw());
+            let dir = crate::win32::images_dir();
+            std::fs::create_dir_all(&dir).ok()?;
+            let path = dir.join(format!("{hash}.png"));
+            if !path.exists() {
+                resized.save(&path).ok()?;
+            }
 
-        let thumb_scale = (THUMBNAIL_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
-        let (thumb_w, thumb_h) = ((w as f32 * thumb_scale) as u32, (h as f32 * thumb_scale) as u32);
-        let thumbnail = image::imageops::resize(&img_buf, thumb_w.max(1), thumb_h.max(1), image::imageops::FilterType::Triangle);
-        let thumb_path = dir.join(format!("{hash}_thumb.png"));
-        if !thumb_path.exists() {
-            thumbnail.save(&thumb_path).ok()?;
-        }
+            let thumb_scale = (THUMBNAIL_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
+            let (thumb_w, thumb_h) = ((w as f32 * thumb_scale) as u32, (h as f32 * thumb_scale) as u32);
+            let thumbnail = image::imageops::resize(&img_buf, thumb_w.max(1), thumb_h.max(1), image::imageops::FilterType::Triangle);
+            let thumb_path = dir.join(format!("{hash}_thumb.png"));
+            if !thumb_path.exists() {
+                thumbnail.save(&thumb_path).ok()?;
+            }
 
-        return Some(NewItem {
-            kind: "image".into(),
-            content: None,
-            content_alt: None,
-            image_path: Some(path.to_string_lossy().to_string()),
-            thumb_path: Some(thumb_path.to_string_lossy().to_string()),
-            preview: format!("Image ({out_w}x{out_h})"),
-            dedup_source: format!("image:{hash}"),
-        });
+            return Some(NewItem {
+                kind: "image".into(),
+                content: None,
+                content_alt: None,
+                image_path: Some(path.to_string_lossy().to_string()),
+                thumb_path: Some(thumb_path.to_string_lossy().to_string()),
+                preview: format!("Image ({out_w}x{out_h})"),
+                dedup_source: format!("image:{hash}"),
+            });
+        }
     }
 
     if let Some(paths) = crate::win32::read_hdrop() {
