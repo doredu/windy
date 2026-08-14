@@ -631,6 +631,16 @@ getVersion()
 
 function renderUpdateStatus(status: UpdateStatusDto) {
   updateBannerEl.classList.remove("error");
+  // manualCheck() disables the button while its own check is in flight and
+  // only re-enables it in its own finally block, guarded by the shared
+  // updateCheckSeq counter -- if a sibling loadUpdateStatus() call (e.g. from
+  // a window-focus event firing while manualCheck()'s request is still
+  // pending) bumps that counter and resolves first, manualCheck()'s seq
+  // guard makes it bail out without ever re-enabling the button, and this
+  // function (the one place both paths converge) never reset it either --
+  // leaving the button permanently stuck disabled/"Checking…" for the rest
+  // of the session.
+  updateActionEl.disabled = false;
   if (status.available) {
     updateTextEl.textContent = `Update available: v${status.version}`;
     updateActionEl.textContent = "Update";
