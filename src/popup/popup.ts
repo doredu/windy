@@ -279,8 +279,10 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") {
     // First Escape clears an active search (and keeps the popup open so the
     // user can keep browsing); only a second Escape (or Escape with no
-    // search text) closes the popup.
-    if (document.activeElement === searchEl && searchEl.value) {
+    // search text) closes the popup. This applies regardless of which
+    // control currently has focus (search box, close button, a row's
+    // delete button, etc.) so Escape behaves consistently.
+    if (searchEl.value) {
       searchEl.value = "";
       applyFilter();
       return;
