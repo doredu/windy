@@ -40,11 +40,17 @@
     <section id="panel-storage" class="tab-panel" data-panel="storage" role="tabpanel" aria-labelledby="tab-storage">
       <div class="field">
         <label for="maxItems">Max items</label>
-        <input id="maxItems" type="number" min="1" placeholder="Unlimited">
+        <div class="control-row">
+          <input id="maxItems" type="number" min="1" placeholder="Unlimited">
+          <button type="button" id="resetMaxItems" class="reset-btn" title="Reset to default (200)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="retentionDays">Retention (days)</label>
-        <input id="retentionDays" type="number" min="1" placeholder="Unlimited">
+        <div class="control-row">
+          <input id="retentionDays" type="number" min="1" placeholder="Unlimited">
+          <button type="button" id="resetRetentionDays" class="reset-btn" title="Reset to default (30)">Reset</button>
+        </div>
       </div>
       <span id="storageError" class="field-error" role="alert"></span>
       <div class="field">

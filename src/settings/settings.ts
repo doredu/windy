@@ -40,6 +40,8 @@ const accentColorValueEl = document.getElementById("popupAccentColorValue")!;
 const resetOpacityEl = document.getElementById("resetOpacity") as HTMLButtonElement;
 const resetBgColorEl = document.getElementById("resetBgColor") as HTMLButtonElement;
 const resetAccentColorEl = document.getElementById("resetAccentColor") as HTMLButtonElement;
+const resetMaxItemsEl = document.getElementById("resetMaxItems") as HTMLButtonElement;
+const resetRetentionDaysEl = document.getElementById("resetRetentionDays") as HTMLButtonElement;
 const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectElement;
 const popupPinEl = document.getElementById("popupPin") as HTMLSelectElement;
 const clearHistoryOnQuitEl = document.getElementById("clearHistoryOnQuit") as HTMLInputElement;
@@ -135,6 +137,8 @@ const DEFAULT_POPUP_OPACITY = "90";
 const DEFAULT_POPUP_BG_COLOR = "#1e1e22";
 const DEFAULT_POPUP_ACCENT_COLOR = "#ffffff";
 const DEFAULT_HOTKEY = "Ctrl+Alt+V";
+const DEFAULT_MAX_ITEMS = "200";
+const DEFAULT_RETENTION_DAYS = "30";
 
 resetOpacityEl.addEventListener("click", () => {
   opacityEl.value = DEFAULT_POPUP_OPACITY;
@@ -161,6 +165,20 @@ hotkeyResetEl.addEventListener("click", () => {
   }
   hotkeyEl.value = DEFAULT_HOTKEY;
   hotkeyErrorEl.textContent = "";
+  markDirty();
+});
+// Unlike Appearance's Reset buttons, Max items/Retention (days) share a
+// single storageErrorEl -- resetting one field to its (always-valid)
+// default must not leave a stale error referring to the other field intact,
+// nor should it leave the just-fixed error lingering if both are now valid.
+resetMaxItemsEl.addEventListener("click", () => {
+  maxItemsEl.value = DEFAULT_MAX_ITEMS;
+  if (isValidStorageField(retentionEl)) storageErrorEl.textContent = "";
+  markDirty();
+});
+resetRetentionDaysEl.addEventListener("click", () => {
+  retentionEl.value = DEFAULT_RETENTION_DAYS;
+  if (isValidStorageField(maxItemsEl)) storageErrorEl.textContent = "";
   markDirty();
 });
 
