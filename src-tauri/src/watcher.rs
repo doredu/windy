@@ -191,18 +191,6 @@ fn monitor_dpi_scale(monitor: windows::Win32::Graphics::Gdi::HMONITOR) -> f64 {
 /// shown/hidden.
 pub fn emit_toggle_popup(app_handle: &AppHandle, store: &Arc<Mutex<HistoryStore>>) {
     let cursor = crate::win32::cursor_position();
-    // Resolve the *target* monitor once and derive both the screen bounds
-    // and the popup's expected physical size from it. Using the popup
-    // window's own (pre-move) `outer_size()` here would reflect whatever
-    // monitor/DPI it currently happens to be sitting on -- wrong when
-    // toggling it open onto a *different* monitor with a different DPI
-    // scale factor (e.g. a 100%-scaled laptop panel + a 250%-scaled
-    // external display), which could clamp the position against the wrong
-    // physical size and leave the popup rendered partially off-screen.
-    let monitor = monitor_at(cursor);
-    let screen = monitor_bounds(monitor);
-    let scale = monitor_dpi_scale(monitor);
-    let popup_size = ((POPUP_LOGICAL_SIZE.0 * scale) as i32, (POPUP_LOGICAL_SIZE.1 * scale) as i32);
     let (mode, pin) = {
         let s = store.lock().unwrap_or_else(PoisonError::into_inner);
         (
@@ -211,6 +199,30 @@ pub fn emit_toggle_popup(app_handle: &AppHandle, store: &Arc<Mutex<HistoryStore>
         )
     };
     let foreground_window = crate::win32::foreground_window_rect();
+    // Resolve the *target* monitor once and derive both the screen bounds
+    // and the popup's expected physical size from it. Using the popup
+    // window's own (pre-move) `outer_size()` here would reflect whatever
+    // monitor/DPI it currently happens to be sitting on -- wrong when
+    // toggling it open onto a *different* monitor with a different DPI
+    // scale factor (e.g. a 100%-scaled laptop panel + a 250%-scaled
+    // external display), which could clamp the position against the wrong
+    // physical size and leave the popup rendered partially off-screen.
+    //
+    // For "window_center" mode the anchor is the foreground window's
+    // center, not the cursor -- on a multi-monitor setup the mouse can be
+    // resting on a different monitor than the focused window (e.g. after
+    // alt-tabbing), so the target monitor must be resolved from the
+    // window's center point in that case, not from the cursor, or the
+    // popup gets clamped against the wrong monitor's bounds/DPI entirely.
+    let anchor_point = if mode == PopupPositionMode::WindowCenter {
+        foreground_window.map(|(wx, wy, ww, wh)| (wx + ww / 2, wy + wh / 2)).unwrap_or(cursor)
+    } else {
+        cursor
+    };
+    let monitor = monitor_at(anchor_point);
+    let screen = monitor_bounds(monitor);
+    let scale = monitor_dpi_scale(monitor);
+    let popup_size = ((POPUP_LOGICAL_SIZE.0 * scale) as i32, (POPUP_LOGICAL_SIZE.1 * scale) as i32);
     let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
     let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
 }
