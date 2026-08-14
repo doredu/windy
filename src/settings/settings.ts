@@ -683,9 +683,34 @@ async function installNow() {
 
 async function loadUpdateStatus() {
   const seq = ++updateCheckSeq;
-  const status = await getUpdateStatus();
-  if (seq !== updateCheckSeq) return;
-  renderUpdateStatus(status);
+  // Unlike manualCheck() (triggered by a button the user can retry), this
+  // runs unattended on every startup and window-focus -- if getUpdateStatus()
+  // rejects (e.g. a transient store/IO error) without this guard, the
+  // `await` throws before renderUpdateStatus() ever runs, leaving
+  // updateActionEl permanently blank with no onclick bound at all (it's
+  // only ever populated inside renderUpdateStatus()) and the banner stuck
+  // hidden -- since the Settings webview is never recreated, that broken,
+  // inert state would persist for the rest of the session.
+  try {
+    const status = await getUpdateStatus();
+    if (seq !== updateCheckSeq) return;
+    renderUpdateStatus(status);
+  } catch {
+    if (seq !== updateCheckSeq) return;
+    // updateActionEl starts as an empty <button> in index.html with no
+    // onclick bound -- it's only ever populated inside renderUpdateStatus(),
+    // which we're bailing out of here. Without this, a failure on the very
+    // first call (before renderUpdateStatus() ever ran once) would leave the
+    // button permanently blank and inert with nothing to click to retry.
+    // Bind it to the same manual-check path the "Check for updates" button
+    // normally uses, rather than surfacing an error banner for a check the
+    // user never explicitly asked for.
+    if (!updateActionEl.onclick) {
+      updateActionEl.textContent = "Check for updates";
+      updateActionEl.onclick = manualCheck;
+      updateBannerEl.classList.remove("hidden");
+    }
+  }
 }
 
 load();
