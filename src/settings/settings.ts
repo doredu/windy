@@ -19,6 +19,7 @@ const retentionEl = document.getElementById("retentionDays") as HTMLInputElement
 const autostartEl = document.getElementById("startWithWindows") as HTMLInputElement;
 const hotkeyEl = document.getElementById("hotkey") as HTMLInputElement;
 const hotkeyRecordEl = document.getElementById("hotkeyRecord") as HTMLButtonElement;
+const hotkeyResetEl = document.getElementById("hotkeyReset") as HTMLButtonElement;
 const hotkeyErrorEl = document.getElementById("hotkeyError")!;
 const captureErrorEl = document.getElementById("captureError")!;
 const storageErrorEl = document.getElementById("storageError")!;
@@ -131,6 +132,7 @@ accentColorEl.addEventListener("input", () => {
 const DEFAULT_POPUP_OPACITY = "90";
 const DEFAULT_POPUP_BG_COLOR = "#1e1e22";
 const DEFAULT_POPUP_ACCENT_COLOR = "#ffffff";
+const DEFAULT_HOTKEY = "Ctrl+Alt+V";
 
 resetOpacityEl.addEventListener("click", () => {
   opacityEl.value = DEFAULT_POPUP_OPACITY;
@@ -145,6 +147,18 @@ resetBgColorEl.addEventListener("click", () => {
 resetAccentColorEl.addEventListener("click", () => {
   accentColorEl.value = DEFAULT_POPUP_ACCENT_COLOR;
   accentColorValueEl.textContent = accentColorEl.value;
+  markDirty();
+});
+// Unlike the Appearance color/opacity fields, the hotkey has no native input
+// to type a value into -- it's an opaque string set only via Record or here,
+// so this is the only way back to the default without recording Ctrl+Alt+V
+// by hand.
+hotkeyResetEl.addEventListener("click", () => {
+  if (recording) {
+    stopRecording();
+  }
+  hotkeyEl.value = DEFAULT_HOTKEY;
+  hotkeyErrorEl.textContent = "";
   markDirty();
 });
 
