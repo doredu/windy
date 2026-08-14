@@ -157,19 +157,19 @@ const DEFAULT_MAX_ITEMS = "200";
 const DEFAULT_RETENTION_DAYS = "30";
 
 resetOpacityEl.addEventListener("click", () => {
+  if (opacityEl.value !== DEFAULT_POPUP_OPACITY) markDirty();
   opacityEl.value = DEFAULT_POPUP_OPACITY;
   opacityValueEl.textContent = `${opacityEl.value}%`;
-  markDirty();
 });
 resetBgColorEl.addEventListener("click", () => {
+  if (bgColorEl.value !== DEFAULT_POPUP_BG_COLOR) markDirty();
   bgColorEl.value = DEFAULT_POPUP_BG_COLOR;
   bgColorValueEl.textContent = bgColorEl.value;
-  markDirty();
 });
 resetAccentColorEl.addEventListener("click", () => {
+  if (accentColorEl.value !== DEFAULT_POPUP_ACCENT_COLOR) markDirty();
   accentColorEl.value = DEFAULT_POPUP_ACCENT_COLOR;
   accentColorValueEl.textContent = accentColorEl.value;
-  markDirty();
 });
 // Unlike the Appearance color/opacity fields, the hotkey has no native input
 // to type a value into -- it's an opaque string set only via Record or here,
@@ -179,23 +179,23 @@ hotkeyResetEl.addEventListener("click", () => {
   if (recording) {
     stopRecording();
   }
+  if (hotkeyEl.value !== DEFAULT_HOTKEY) markDirty();
   hotkeyEl.value = DEFAULT_HOTKEY;
   hotkeyErrorEl.textContent = "";
-  markDirty();
 });
 // Unlike Appearance's Reset buttons, Max items/Retention (days) share a
 // single storageErrorEl -- resetting one field to its (always-valid)
 // default must not leave a stale error referring to the other field intact,
 // nor should it leave the just-fixed error lingering if both are now valid.
 resetMaxItemsEl.addEventListener("click", () => {
+  if (maxItemsEl.value !== DEFAULT_MAX_ITEMS) markDirty();
   maxItemsEl.value = DEFAULT_MAX_ITEMS;
   if (isValidStorageField(retentionEl)) storageErrorEl.textContent = "";
-  markDirty();
 });
 resetRetentionDaysEl.addEventListener("click", () => {
+  if (retentionEl.value !== DEFAULT_RETENTION_DAYS) markDirty();
   retentionEl.value = DEFAULT_RETENTION_DAYS;
   if (isValidStorageField(maxItemsEl)) storageErrorEl.textContent = "";
-  markDirty();
 });
 
 function isValidStorageField(el: HTMLInputElement): boolean {
