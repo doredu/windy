@@ -212,11 +212,13 @@ pub fn set_settings(
     app: AppHandle,
 ) -> Result<(), String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(v) = settings.max_items {
-        s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?;
+    match settings.max_items {
+        Some(v) => s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?,
+        None => s.delete_setting("max_items").map_err(|e| e.to_string())?,
     }
-    if let Some(v) = settings.retention_days {
-        s.set_setting("retention_days", &v.to_string()).map_err(|e| e.to_string())?;
+    match settings.retention_days {
+        Some(v) => s.set_setting("retention_days", &v.to_string()).map_err(|e| e.to_string())?,
+        None => s.delete_setting("retention_days").map_err(|e| e.to_string())?,
     }
     s.set_setting("start_with_windows", if settings.start_with_windows { "true" } else { "false" })
         .map_err(|e| e.to_string())?;

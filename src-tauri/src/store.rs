@@ -661,6 +661,11 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn delete_setting(&self, key: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
     /// Deletes rows past `max_items`/`retention_days`, and also removes the
     /// on-disk image/thumbnail files for any evicted row that had them --
     /// otherwise pruned/duplicate images would orphan files under the app
