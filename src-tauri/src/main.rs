@@ -144,6 +144,31 @@ fn main() {
                             // so clicking the tray's "Settings" item again
                             // would silently appear to do nothing.
                             let _ = w.unminimize();
+                            // Same idea as "open_history"'s cursor-relative
+                            // repositioning below: if the window was last
+                            // left on a monitor that's no longer connected
+                            // (e.g. unplugged, or a display-arrangement
+                            // change), it stays at those now off-screen
+                            // coordinates -- show()/set_focus() alone won't
+                            // move it back, so the user sees nothing happen.
+                            if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+                                let on_screen = w
+                                    .available_monitors()
+                                    .map(|monitors| {
+                                        monitors.iter().any(|m| {
+                                            let m_pos = m.position();
+                                            let m_size = m.size();
+                                            pos.x + (size.width as i32) > m_pos.x
+                                                && pos.x < m_pos.x + m_size.width as i32
+                                                && pos.y + (size.height as i32) > m_pos.y
+                                                && pos.y < m_pos.y + m_size.height as i32
+                                        })
+                                    })
+                                    .unwrap_or(true);
+                                if !on_screen {
+                                    let _ = w.center();
+                                }
+                            }
                             let _ = w.show();
                             let _ = w.set_focus();
                         } else {
