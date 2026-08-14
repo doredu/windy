@@ -15,6 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Sync project version from the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          echo "Syncing project version to $VERSION (from tag $TAG)"
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" src-tauri/Cargo.toml
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
+          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+        env:
+          TAG: ${{ inputs.tag }}
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: denoland/setup-deno@v2
@@ -35,3 +47,19 @@ jobs:
           releaseDraft: true
           prerelease: false
           projectPath: src-tauri
+
+      - name: Commit synced version back to the branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json; then
+            echo "Version already in sync; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git commit -m "chore: sync version to ${TAG#v} for release $TAG"
+          git push origin HEAD:${{ github.ref_name }}
+        env:
+          TAG: ${{ inputs.tag }}
