@@ -524,6 +524,12 @@ document.addEventListener("keydown", async (e) => {
       const row = active.closest(".row");
       const rowIndex = row ? Array.from(listEl.children).indexOf(row) : -1;
       if (rowIndex !== -1) targetIndex = rowIndex;
+    } else if (active?.tagName === "BUTTON") {
+      // Focus is on some other button (e.g. header Close/Clear-search) that
+      // has no row association -- don't fall back to silently deleting
+      // whatever row selectedIndex happens to point at (same hazard as the
+      // Enter handler above).
+      return;
     }
     if (!filtered[targetIndex]) return;
     e.preventDefault();
