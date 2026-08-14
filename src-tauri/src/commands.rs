@@ -270,9 +270,9 @@ pub fn set_settings(
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
     let autostart_result = if settings.start_with_windows {
-        autostart.enable().map_err(|e| e.to_string())
+        autostart.enable().map_err(|e| format!("Couldn't enable \"Start with Windows\": {e}"))
     } else {
-        autostart.disable().map_err(|e| e.to_string())
+        autostart.disable().map_err(|e| format!("Couldn't disable \"Start with Windows\": {e}"))
     };
     if let Err(e) = autostart_result {
         // Best-effort revert so the live hotkey registration doesn't outlive
