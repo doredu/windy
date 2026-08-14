@@ -398,14 +398,15 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
   if (e.key === "Enter") {
-    // Tabbing can focus a row's delete button independently of selectedIndex
-    // (same hazard as the Delete-key handler below) -- if we acted on
-    // filtered[selectedIndex] here, pressing Enter would both paste the
-    // wrong (selectedIndex) item AND trigger the focused delete button's own
-    // native Enter-activation, deleting an unrelated row. Let the button's
-    // own click handler own Enter in that case instead of double-acting.
+    // Tabbing can focus a row's delete button, or the header's Clear-search/
+    // Close buttons, independently of selectedIndex (same hazard as the
+    // Delete-key handler below) -- if we acted on filtered[selectedIndex]
+    // here, pressing Enter on any of those would both paste the wrong
+    // (selectedIndex) item AND trigger the focused button's own native
+    // Enter-activation. Let any focused <button>'s own click handler own
+    // Enter instead of double-acting.
     const active = document.activeElement as HTMLElement | null;
-    if (active?.classList.contains("delete")) return;
+    if (active?.tagName === "BUTTON") return;
     if (!filtered[selectedIndex]) return;
     await selectAndClose(filtered[selectedIndex].id);
     return;
