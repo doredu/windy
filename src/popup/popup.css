@@ -50,3 +50,5 @@ html.light-bg #error { color: #c0342f; background: rgba(192,52,47,0.08); border-
    outer shape (see popup.ts DOC_ICON_SVG) -- flip them light when the shape
    itself turns dark in light-bg mode, or they'd vanish into the shape. */
 html.light-bg { --thumb-icon-line: #f5f5f5; }
+html.light-bg #list::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.18); }
+html.light-bg #list::-webkit-scrollbar-thumb:hover { background-color: rgba(0,0,0,0.3); }
