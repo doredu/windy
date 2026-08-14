@@ -155,6 +155,35 @@ mod tests {
     }
 
     #[test]
+    fn prune_respects_most_copied_sort_mode() {
+        // With sort_mode = most_copied, pruning must keep the most-copied
+        // rows, not just the most-recently-*last-copied* ones -- otherwise a
+        // heavily reused item can be silently evicted while sorted display
+        // still implies "most copied" survives longest.
+        let store = mem_store();
+        store.set_setting("sort_mode", "most_copied").unwrap();
+        store.set_setting("max_items", "2").unwrap();
+
+        store.capture(text_item("popular")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("popular")).unwrap(); // copy_count = 2, but stale created_at
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        store.capture(text_item("one-off-1")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("one-off-2")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("one-off-3")).unwrap(); // pushes total past max_items = 2
+
+        let contents: Vec<Option<String>> =
+            store.get_history().unwrap().into_iter().map(|h| h.content).collect();
+        assert!(
+            contents.contains(&Some("popular".to_string())),
+            "the most-copied item must survive pruning even though it wasn't the most recently copied: {contents:?}"
+        );
+    }
+
+    #[test]
     fn settings_round_trip() {
         let store = mem_store();
         // `open()` seeds defaults, so overwrite retention_days explicitly and
@@ -675,11 +704,18 @@ impl HistoryStore {
         let mut evicted_paths: Vec<String> = Vec::new();
 
         if let Some(max) = self.get_setting("max_items")?.and_then(|v| v.parse::<i64>().ok()) {
-            evicted_paths.extend(self.paths_outside_limit(max)?);
+            let mode = self
+                .get_setting("sort_mode")?
+                .map(|v| SortMode::parse(&v))
+                .unwrap_or(SortMode::LastCopied);
+            evicted_paths.extend(self.paths_outside_limit(max, &mode)?);
             self.conn.execute(
-                "DELETE FROM items WHERE id NOT IN (
-                    SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
-                )",
+                &format!(
+                    "DELETE FROM items WHERE id NOT IN (
+                        SELECT id FROM items ORDER BY {} LIMIT ?1
+                    )",
+                    mode.order_by()
+                ),
                 params![max],
             )?;
         }
@@ -695,12 +731,13 @@ impl HistoryStore {
         Ok(())
     }
 
-    fn paths_outside_limit(&self, max: i64) -> rusqlite::Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+    fn paths_outside_limit(&self, max: i64, mode: &SortMode) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(&format!(
             "SELECT image_path, thumb_path FROM items WHERE id NOT IN (
-                SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
+                SELECT id FROM items ORDER BY {} LIMIT ?1
             )",
-        )?;
+            mode.order_by()
+        ))?;
         let rows = stmt.query_map(params![max], |row| {
             Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
