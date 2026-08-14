@@ -533,6 +533,11 @@ async function manualCheck() {
 }
 
 async function installNow() {
+  // Installing an update calls app.request_restart() on the backend, which
+  // exits the process immediately -- the same "silently discards in-progress
+  // edits" hazard that Escape/titlebar-close/tray-Quit already guard against
+  // via `dirty`, but this exit path had no check at all.
+  if (dirty && !confirm("Discard unsaved changes and update now?")) return;
   updateActionEl.disabled = true;
   updateActionEl.textContent = "Updating…";
   try {
