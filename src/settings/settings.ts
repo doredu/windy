@@ -350,6 +350,12 @@ document.addEventListener("keydown", (e) => {
     hotkeyEl.value = previousHotkey;
     hotkeyErrorEl.textContent = "";
     stopRecording();
+    // Without this, the window-level Escape-to-close listener below would
+    // also see this same keydown event and, since `recording` is now false
+    // (just cleared by stopRecording() above), fall through and close the
+    // whole Settings window on the same keystroke meant only to cancel the
+    // recording.
+    e.stopImmediatePropagation();
     return;
   }
   if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
