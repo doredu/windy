@@ -165,6 +165,28 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
     }
 }
 
+/// Computes the popup's cursor-relative position (respecting the user's
+/// `popup_position`/`popup_pin` settings) and emits `"toggle-popup"` with it,
+/// exactly as the global hotkey does. Also used by the tray icon/menu's
+/// "open history" actions (main.rs) so opening the popup from the tray
+/// positions it the same way instead of leaving it wherever it last was
+/// shown/hidden.
+pub fn emit_toggle_popup(app_handle: &AppHandle, store: &Arc<Mutex<HistoryStore>>) {
+    let cursor = crate::win32::cursor_position();
+    let popup_size = popup_physical_size(app_handle);
+    let screen = monitor_bounds_at(cursor);
+    let (mode, pin) = {
+        let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+        (
+            PopupPositionMode::parse(&s.get_setting("popup_position").ok().flatten().unwrap_or_default()),
+            PopupPin::parse(&s.get_setting("popup_pin").ok().flatten().unwrap_or_default()),
+        )
+    };
+    let foreground_window = crate::win32::foreground_window_rect();
+    let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
+    let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
+}
+
 /// Arbitrary id identifying our hotkey registration to `RegisterHotKey`/
 /// `UnregisterHotKey` and matched against `WM_HOTKEY`'s wParam.
 const TOGGLE_HOTKEY_ID: i32 = 1;
@@ -243,19 +265,7 @@ unsafe fn run_hotkey_listener(
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
         if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == TOGGLE_HOTKEY_ID {
-            let cursor = crate::win32::cursor_position();
-            let popup_size = popup_physical_size(&app_handle);
-            let screen = monitor_bounds_at(cursor);
-            let (mode, pin) = {
-                let s = store.lock().unwrap_or_else(PoisonError::into_inner);
-                (
-                    PopupPositionMode::parse(&s.get_setting("popup_position").ok().flatten().unwrap_or_default()),
-                    PopupPin::parse(&s.get_setting("popup_pin").ok().flatten().unwrap_or_default()),
-                )
-            };
-            let foreground_window = crate::win32::foreground_window_rect();
-            let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
-            let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
+            emit_toggle_popup(&app_handle, &store);
         } else if msg.message == REBIND_HOTKEY_MSG {
             let Some(PendingRebind { combo, result_tx }) = pending.lock().unwrap_or_else(PoisonError::into_inner).take() else {
                 continue;

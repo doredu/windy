@@ -89,9 +89,15 @@ fn main() {
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open_history" => {
-                        if let Some(w) = app.get_webview_window("popup") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                        use tauri::Manager;
+                        if app.get_webview_window("popup").is_some() {
+                            // Reuse the hotkey's cursor-relative positioning
+                            // instead of a bare show()/set_focus(), so the
+                            // popup doesn't appear stuck wherever it was last
+                            // shown/hidden (e.g. off-screen after a monitor
+                            // was unplugged) when opened from the tray menu.
+                            let store = app.state::<commands::Store>();
+                            watcher::emit_toggle_popup(app, &store);
                         } else {
                             eprintln!("tray: no window labeled 'popup' to show");
                         }
@@ -138,10 +144,11 @@ fn main() {
                         ..
                     } = event
                     {
+                        use tauri::Manager;
                         let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("popup") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                        if app.get_webview_window("popup").is_some() {
+                            let store = app.state::<commands::Store>();
+                            watcher::emit_toggle_popup(app, &store);
                         }
                     }
                 });
