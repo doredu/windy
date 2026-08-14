@@ -125,6 +125,17 @@ for (const el of [maxItemsEl, retentionEl]) {
   });
 }
 
+// Tracks whether any form field has changed since the last load()/successful
+// save, so Escape (added in a prior iteration to close the window) can warn
+// before silently discarding in-progress edits instead of just hiding.
+let dirty = false;
+form.addEventListener("input", () => {
+  dirty = true;
+});
+form.addEventListener("change", () => {
+  dirty = true;
+});
+
 async function load() {
   const settings = await getSettings();
   maxItemsEl.value = settings.max_items?.toString() ?? "";
@@ -147,6 +158,7 @@ async function load() {
   clearHistoryOnQuitEl.checked = settings.clear_history_on_quit;
   clearClipboardOnQuitEl.checked = settings.clear_clipboard_on_quit;
   clearClipboardOnQuitEl.disabled = !settings.clear_history_on_quit;
+  dirty = false;
 }
 
 // Press-to-record hotkey capture: click Record, then press a modifier +
@@ -221,6 +233,10 @@ document.addEventListener("keydown", (e) => {
   hotkeyEl.value = parts.join("+");
   hotkeyErrorEl.textContent = "";
   stopRecording();
+  // hotkeyEl.value is assigned programmatically above, which doesn't fire a
+  // native `input` event, so the delegated dirty-tracking listener on the
+  // form wouldn't otherwise notice this change.
+  dirty = true;
 });
 
 // The Settings window is a decorated OS window (native close button already
@@ -230,6 +246,11 @@ document.addEventListener("keydown", (e) => {
 // via the keydown listener above.
 document.addEventListener("keydown", async (e) => {
   if (e.key !== "Escape" || recording) return;
+  // Without this, edits made but not yet saved (e.g. changing a few fields
+  // then hitting Escape out of habit) were silently discarded with no
+  // warning -- the same kind of unnoticed state loss as the mid-interaction
+  // bugs fixed in earlier iterations, just triggered by closing the window.
+  if (dirty && !confirm("Discard unsaved changes?")) return;
   await getCurrentWindow().hide();
 });
 
@@ -307,6 +328,7 @@ form.addEventListener("submit", async (e) => {
     saveBtn.disabled = false;
     saveBtn.textContent = "Save";
   }
+  dirty = false;
   status.classList.add("visible");
   // Guard against a stale timeout from an earlier save hiding this run's
   // status message early if Save is clicked again within the display window.
