@@ -279,24 +279,28 @@ unsafe fn run_hotkey_listener(
 
     let _ = thread_id_tx.send(GetCurrentThreadId());
 
+    // `modifiers`/`vk` are `None` whenever there's no currently-registered
+    // combo (either the stored value failed to parse, or RegisterHotKey
+    // itself failed) -- kept as an Option rather than exiting the thread in
+    // that case, since HotkeyHandle::rebind() posts REBIND_HOTKEY_MSG to
+    // this same thread and needs it to keep pumping messages so a later,
+    // valid rebind from Settings can still succeed without an app restart.
     let (mut modifiers, mut vk) = match parse_hotkey(&initial_hotkey) {
-        Ok(parsed) => parsed,
+        Ok((m, v)) => {
+            if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, m, v) {
+                eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
+                active.store(false, Ordering::SeqCst);
+                (None, None)
+            } else {
+                (Some(m), Some(v))
+            }
+        }
         Err(e) => {
             eprintln!("watcher: invalid stored hotkey \"{initial_hotkey}\" ({e}); the toggle is disabled");
             active.store(false, Ordering::SeqCst);
-            return;
+            (None, None)
         }
     };
-    if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk) {
-        eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
-        active.store(false, Ordering::SeqCst);
-        // Don't exit the thread here: RegisterHotKey ties registration to
-        // this thread's message queue, and HotkeyHandle::rebind() posts
-        // REBIND_HOTKEY_MSG to this same thread. If we returned, a later
-        // rebind attempt with a different (non-conflicting) combo could
-        // never succeed without a full app restart, since the thread
-        // (and its message queue) would already be gone.
-    }
 
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
@@ -309,11 +313,13 @@ unsafe fn run_hotkey_listener(
             let result = match parse_hotkey(&combo) {
                 Err(e) => Err(e),
                 Ok((new_modifiers, new_vk)) => {
-                    let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
+                    if modifiers.is_some() {
+                        let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
+                    }
                     match RegisterHotKey(None, TOGGLE_HOTKEY_ID, new_modifiers, new_vk) {
                         Ok(()) => {
-                            modifiers = new_modifiers;
-                            vk = new_vk;
+                            modifiers = Some(new_modifiers);
+                            vk = Some(new_vk);
                             active.store(true, Ordering::SeqCst);
                             Ok(())
                         }
@@ -323,9 +329,19 @@ unsafe fn run_hotkey_listener(
                             // that re-registration fails (e.g. the combo was
                             // just taken by another app mid-rebind), the
                             // toggle is now genuinely unbound -- reflect that.
-                            let restored = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk).is_ok();
+                            // There may be no previous combo at all (the
+                            // initial stored hotkey was invalid/unregistered),
+                            // in which case there's nothing to restore.
+                            let restored = match (modifiers, vk) {
+                                (Some(m), Some(v)) => RegisterHotKey(None, TOGGLE_HOTKEY_ID, m, v).is_ok(),
+                                _ => false,
+                            };
                             active.store(restored, Ordering::SeqCst);
-                            Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
+                            if restored {
+                                Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
+                            } else {
+                                Err(format!("couldn't register \"{combo}\": {e} (the toggle is now unbound)"))
+                            }
                         }
                     }
                 }
