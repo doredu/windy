@@ -3,7 +3,7 @@
 <script type="module" src="../dist/settings/settings.js"></script></head>
 <body>
   <div id="updateBanner" class="update-banner hidden">
-    <span id="updateText"></span>
+    <span id="updateText" role="status"></span>
     <button type="button" id="updateAction"></button>
   </div>
   <div class="tabs" role="tablist">
@@ -24,7 +24,7 @@
           <input id="hotkey" type="text" readonly placeholder="Click Record and press keys">
           <button type="button" id="hotkeyRecord">Record</button>
         </div>
-        <span id="hotkeyError" class="field-error"></span>
+        <span id="hotkeyError" class="field-error" role="alert"></span>
       </div>
       <label class="checkbox-field">
         <input id="autoCheckUpdates" type="checkbox">
@@ -102,7 +102,7 @@
 
     <div class="actions">
       <button type="submit">Save</button>
-      <span id="status">Saved</span>
+      <span id="status" role="status">Saved</span>
     </div>
   </form>
 </body></html>
