@@ -131,6 +131,8 @@ input[type="text"]#hotkey:focus-visible {
 
 .field-hint.error { color: #ff8080; }
 
+#hotkeyInactiveWarning.hidden { display: none; }
+
 .danger-btn {
   background: transparent;
   border: 1px solid #e0524d;

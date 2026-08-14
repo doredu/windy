@@ -26,6 +26,12 @@ export interface SettingsDto {
   retention_days: number | null;
   start_with_windows: boolean;
   hotkey: string;
+  // Only meaningful on the response from `get_settings` -- reflects whether
+  // the configured hotkey is actually registered with Windows right now, not
+  // a persisted setting. `set_settings` ignores it, so it's optional here
+  // rather than forcing every SettingsDto construction (e.g. the submit
+  // handler) to fill in a meaningless value just to satisfy the type.
+  hotkey_active?: boolean;
   auto_check_updates: boolean;
   sort_mode: SortMode;
   capture_types: CaptureType[];

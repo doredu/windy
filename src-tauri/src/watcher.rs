@@ -26,6 +26,7 @@
 use crate::position::{compute_popup_position, PopupPin, PopupPositionMode};
 use crate::store::HistoryStore;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
 use tauri::{AppHandle, Emitter, Manager};
@@ -46,9 +47,25 @@ struct PendingRebind {
 pub struct HotkeyHandle {
     thread_id: u32,
     pending: Arc<Mutex<Option<PendingRebind>>>,
+    // Whether the toggle combo is actually registered with Windows right now.
+    // RegisterHotKey can fail silently from the user's perspective -- e.g.
+    // another running app already owns the exact same combo, or the stored
+    // hotkey string is corrupt -- in which case the listener thread logs to
+    // stderr (invisible to a normal user) and either exits early (startup) or
+    // keeps the previous combo (rebind). Without this flag, Settings had no
+    // way to tell the user their configured hotkey doesn't actually work.
+    active: Arc<AtomicBool>,
 }
 
 impl HotkeyHandle {
+    /// Whether the configured toggle hotkey is currently registered with
+    /// Windows and will actually fire. False if `RegisterHotKey` failed at
+    /// startup (e.g. the combo is already owned by another app) or the
+    /// hotkey thread has exited.
+    pub fn is_active(&self) -> bool {
+        self.active.load(Ordering::SeqCst)
+    }
+
     /// Requests that the toggle hotkey be changed to `combo` (e.g.
     /// `"Ctrl+Alt+V"`), blocking briefly until the hotkey thread confirms
     /// the new registration succeeded (or reports why it didn't).
@@ -80,6 +97,9 @@ impl HotkeyHandle {
 ///   `store`, emitting `"history-updated"` after each successful capture.
 pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hotkey: String) -> HotkeyHandle {
     let pending: Arc<Mutex<Option<PendingRebind>>> = Arc::new(Mutex::new(None));
+    // Optimistic default; the hotkey thread flips this to `false` if the
+    // initial `RegisterHotKey` call fails before we get a chance to read it.
+    let active = Arc::new(AtomicBool::new(true));
 
     // Hotkey thread: registers `initial_hotkey` and pumps a message loop to
     // receive WM_HOTKEY (and rebind requests). Owns the thread the hotkey is
@@ -90,9 +110,10 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hot
         let app_handle = app_handle.clone();
         let pending = pending.clone();
         let store = store.clone();
+        let active = active.clone();
         let (thread_id_tx, thread_id_rx) = mpsc::channel();
         std::thread::spawn(move || unsafe {
-            run_hotkey_listener(app_handle, store, initial_hotkey, pending, thread_id_tx);
+            run_hotkey_listener(app_handle, store, initial_hotkey, pending, active, thread_id_tx);
         });
         // The hotkey thread reports its OS thread id as the first thing it
         // does, before entering the message loop -- block briefly here so
@@ -108,7 +129,7 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hot
         });
     }
 
-    HotkeyHandle { thread_id, pending }
+    HotkeyHandle { thread_id, pending, active }
 }
 
 /// tauri.conf.json's declared popup size, in *logical* pixels -- used only
@@ -242,6 +263,7 @@ unsafe fn run_hotkey_listener(
     store: Arc<Mutex<HistoryStore>>,
     initial_hotkey: String,
     pending: Arc<Mutex<Option<PendingRebind>>>,
+    active: Arc<AtomicBool>,
     thread_id_tx: mpsc::Sender<u32>,
 ) {
     use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -254,11 +276,13 @@ unsafe fn run_hotkey_listener(
         Ok(parsed) => parsed,
         Err(e) => {
             eprintln!("watcher: invalid stored hotkey \"{initial_hotkey}\" ({e}); the toggle is disabled");
+            active.store(false, Ordering::SeqCst);
             return;
         }
     };
     if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk) {
         eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
+        active.store(false, Ordering::SeqCst);
         return;
     }
 
@@ -278,12 +302,17 @@ unsafe fn run_hotkey_listener(
                         Ok(()) => {
                             modifiers = new_modifiers;
                             vk = new_vk;
+                            active.store(true, Ordering::SeqCst);
                             Ok(())
                         }
                         Err(e) => {
                             // Best-effort: restore the previous combo so the
-                            // toggle isn't left completely unbound.
-                            let _ = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk);
+                            // toggle isn't left completely unbound. If even
+                            // that re-registration fails (e.g. the combo was
+                            // just taken by another app mid-rebind), the
+                            // toggle is now genuinely unbound -- reflect that.
+                            let restored = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk).is_ok();
+                            active.store(restored, Ordering::SeqCst);
                             Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
                         }
                     }

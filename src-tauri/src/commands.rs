@@ -33,6 +33,14 @@ pub struct SettingsDto {
     pub retention_days: Option<i64>,
     pub start_with_windows: bool,
     pub hotkey: String,
+    // Not persisted -- reflects the live hotkey thread's actual registration
+    // state (crate::watcher::HotkeyHandle::is_active) at the moment
+    // get_settings is called, so the frontend can warn if the configured
+    // combo silently isn't working (e.g. owned by another running app).
+    // `set_settings` never reads this field (ignored on the way in), so it
+    // defaults rather than requiring the frontend to round-trip it.
+    #[serde(default)]
+    pub hotkey_active: bool,
     pub auto_check_updates: bool,
     pub sort_mode: String,
     pub capture_types: Vec<String>,
@@ -144,7 +152,7 @@ pub fn quit_app(app: AppHandle, store: State<Store>) {
 }
 
 #[tauri::command]
-pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
+pub fn get_settings(store: State<Store>, hotkey: State<crate::watcher::HotkeyHandle>) -> Result<SettingsDto, String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(SettingsDto {
         max_items: s.get_setting("max_items").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
@@ -155,6 +163,7 @@ pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
             .map(|v| v == "true")
             .unwrap_or(false),
         hotkey: s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into()),
+        hotkey_active: hotkey.is_active(),
         auto_check_updates: s
             .get_setting("auto_check_updates")
             .map_err(|e| e.to_string())?

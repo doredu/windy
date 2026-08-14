@@ -24,6 +24,7 @@ const hotkeyEl = document.getElementById("hotkey") as HTMLInputElement;
 const hotkeyRecordEl = document.getElementById("hotkeyRecord") as HTMLButtonElement;
 const hotkeyResetEl = document.getElementById("hotkeyReset") as HTMLButtonElement;
 const hotkeyErrorEl = document.getElementById("hotkeyError")!;
+const hotkeyInactiveWarningEl = document.getElementById("hotkeyInactiveWarning")!;
 const captureErrorEl = document.getElementById("captureError")!;
 const storageErrorEl = document.getElementById("storageError")!;
 const autoCheckUpdatesEl = document.getElementById("autoCheckUpdates") as HTMLInputElement;
@@ -221,6 +222,12 @@ async function load() {
   retentionEl.value = settings.retention_days?.toString() ?? "";
   autostartEl.checked = settings.start_with_windows;
   hotkeyEl.value = settings.hotkey;
+  // hotkey_active reflects whether RegisterHotKey actually succeeded for the
+  // stored combo (crate::watcher::HotkeyHandle::is_active) -- e.g. another
+  // running app already owns the exact same combo. Previously that failure
+  // only logged to stderr, so the hotkey could silently never fire with zero
+  // indication anywhere in the UI.
+  hotkeyInactiveWarningEl.classList.toggle("hidden", settings.hotkey_active !== false);
   autoCheckUpdatesEl.checked = settings.auto_check_updates;
   sortModeEl.value = settings.sort_mode;
   for (const [kind, el] of Object.entries(captureCheckboxes)) {
@@ -440,6 +447,11 @@ form.addEventListener("submit", async (e) => {
     saveBtn.textContent = "Save";
   }
   clearDirty();
+  // A successful save means `hotkey.rebind()` (called server-side before the
+  // setting is persisted) succeeded, so the hotkey is now definitely active
+  // -- clear any stale warning from a previous broken combo without waiting
+  // for the next full load().
+  hotkeyInactiveWarningEl.classList.add("hidden");
   status.classList.add("visible");
   // Guard against a stale timeout from an earlier save hiding this run's
   // status message early if Save is clicked again within the display window.
