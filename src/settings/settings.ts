@@ -162,6 +162,19 @@ hotkeyRecordEl.addEventListener("click", () => {
   hotkeyEl.value = "Press keys…";
 });
 
+// If recording is active and the user clicks into a different field instead
+// of pressing Escape or Record/Cancel, the keydown handler below would keep
+// swallowing every keystroke (it doesn't check focus) -- silently blocking
+// typing anywhere else in the form. Treat focus leaving the hotkey control
+// as an implicit cancel, same as Escape.
+document.addEventListener("focusin", (e) => {
+  if (!recording) return;
+  if (e.target === hotkeyEl || e.target === hotkeyRecordEl) return;
+  hotkeyEl.value = previousHotkey;
+  hotkeyErrorEl.textContent = "";
+  stopRecording();
+});
+
 document.addEventListener("keydown", (e) => {
   if (!recording) return;
   e.preventDefault();
