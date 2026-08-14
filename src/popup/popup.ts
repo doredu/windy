@@ -388,7 +388,11 @@ document.addEventListener("keydown", async (e) => {
   // Home/End jump to the first/last row, mirroring the ArrowUp/ArrowDown
   // wraparound above -- useful once history grows past a handful of items.
   if (e.key === "Home") {
-    if (document.activeElement === searchEl && searchEl.selectionStart !== 0) return;
+    if (
+      document.activeElement === searchEl &&
+      (searchEl.selectionStart !== 0 || searchEl.selectionEnd !== 0)
+    )
+      return;
     if (filtered.length === 0) return;
     e.preventDefault();
     selectedIndex = 0;
