@@ -39,6 +39,7 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
 
 const listEl = document.getElementById("list")!;
 const searchEl = document.getElementById("search") as HTMLInputElement;
+const clearSearchEl = document.getElementById("clear-search")!;
 let items: HistoryItemDto[] = [];
 let filtered: HistoryItemDto[] = [];
 let selectedIndex = 0;
@@ -47,10 +48,17 @@ document.getElementById("close")!.addEventListener("click", async () => {
   await getCurrentWindow().hide();
 });
 
+clearSearchEl.addEventListener("click", () => {
+  searchEl.value = "";
+  applyFilter();
+  searchEl.focus();
+});
+
 function applyFilter() {
   const query = searchEl.value.trim().toLowerCase();
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
   selectedIndex = 0;
+  clearSearchEl.classList.toggle("visible", searchEl.value.length > 0);
   render();
 }
 

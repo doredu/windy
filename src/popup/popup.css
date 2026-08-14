@@ -5,6 +5,9 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--popup-b
 #search:focus { border-color: var(--popup-accent-color, rgba(255,255,255,0.3)); background: rgba(255,255,255,0.09); }
 #close { width: 20px; height: 20px; line-height: 18px; padding: 0; background: none; border: none; border-radius: 4px; color: #eee; font-size: 15px; cursor: pointer; opacity: 0.6; flex-shrink: 0; }
 #close:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+#clear-search { display: none; width: 20px; height: 20px; line-height: 18px; padding: 0; background: none; border: none; border-radius: 4px; color: #eee; font-size: 15px; cursor: pointer; opacity: 0.6; flex-shrink: 0; }
+#clear-search.visible { display: block; }
+#clear-search:hover { opacity: 1; background: rgba(255,255,255,0.12); }
 #list { max-height: 300px; overflow-y: auto; }
 #list::-webkit-scrollbar { width: 8px; }
 #list::-webkit-scrollbar-track { background: transparent; }
