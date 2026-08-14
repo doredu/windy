@@ -313,6 +313,22 @@ function render() {
   }
 }
 
+// render()'s focus-restore logic (see the `focusedDeleteRowIndex` comment
+// inside render()) is meant to keep Tab-focus on a row's delete button
+// across a *mouse-hover*-triggered re-render (row.onmousemove), so a
+// keyboard-focused button doesn't silently lose focus just because the
+// mouse happened to be resting over a different row. But render() can't
+// tell what triggered it, so without this, an explicit ArrowUp/ArrowDown/
+// Home/End keypress while a delete button has Tab focus would re-trigger
+// that same restore logic and pin focus to the *old* row's delete button --
+// leaving the focus ring stuck behind while the visual selection (and
+// scrollIntoView) moves to a different row. Blur first so these genuinely
+// keyboard-driven selection changes don't fight the restore mechanism.
+function blurFocusedDeleteButton() {
+  const active = document.activeElement as HTMLElement | null;
+  if (active?.classList.contains("delete")) active.blur();
+}
+
 // `resetSelection` is false for post-delete refreshes so removing an item
 // in the middle of a long list keeps the selection near where it was,
 // instead of jumping back to the top every time (render() still clamps
@@ -395,6 +411,7 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "ArrowDown") {
     e.preventDefault();
     if (filtered.length === 0) return;
+    blurFocusedDeleteButton();
     selectedIndex = (selectedIndex + 1) % filtered.length;
     render();
     return;
@@ -402,6 +419,7 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "ArrowUp") {
     e.preventDefault();
     if (filtered.length === 0) return;
+    blurFocusedDeleteButton();
     selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
     render();
     return;
@@ -416,6 +434,7 @@ document.addEventListener("keydown", async (e) => {
       return;
     if (filtered.length === 0) return;
     e.preventDefault();
+    blurFocusedDeleteButton();
     selectedIndex = 0;
     render();
     return;
@@ -427,6 +446,7 @@ document.addEventListener("keydown", async (e) => {
     ) return;
     if (filtered.length === 0) return;
     e.preventDefault();
+    blurFocusedDeleteButton();
     selectedIndex = filtered.length - 1;
     render();
     return;
