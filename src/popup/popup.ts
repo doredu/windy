@@ -416,6 +416,14 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 // Registered once at module load — not per-render — so we never accumulate
 // duplicate listeners across refreshes.
 document.addEventListener("keydown", async (e) => {
+  // While an IME composition is active (e.g. typing Japanese/Chinese/Korean
+  // search text), Escape/ArrowUp/ArrowDown/Home/End keydowns can be the IME
+  // itself consuming the keystroke (cancelling composition, moving the
+  // candidate list) rather than a request to close the popup or move the
+  // list selection. Enter already guards against this below; extend the
+  // same guard to the rest of this handler's keys so composition isn't
+  // hijacked by list navigation or popup close/clear.
+  if (e.isComposing) return;
   if (e.key === "Escape") {
     // First Escape clears an active search (and keeps the popup open so the
     // user can keep browsing); only a second Escape (or Escape with no
@@ -484,14 +492,6 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
   if (e.key === "Enter") {
-    // While an IME composition is active (e.g. typing Japanese/Chinese/Korean
-    // search text), the browser fires a keydown with key === "Enter" and
-    // isComposing === true when the user presses Enter to confirm the
-    // composed text -- that keystroke is meant to commit the IME candidate,
-    // not to select-and-close the popup. Ignoring it here lets composition
-    // finish normally instead of pasting the wrong item and closing the
-    // popup mid-input.
-    if (e.isComposing) return;
     // Tabbing can focus a row's delete button, or the header's Clear-search/
     // Close buttons, independently of selectedIndex (same hazard as the
     // Delete-key handler below) -- if we acted on filtered[selectedIndex]
