@@ -74,6 +74,7 @@ searchEl.addEventListener("input", applyFilter);
 function render() {
   listEl.innerHTML = "";
   if (filtered.length === 0) {
+    searchEl.removeAttribute("aria-activedescendant");
     const empty = document.createElement("div");
     empty.className = "empty";
     empty.textContent = items.length === 0
@@ -87,6 +88,9 @@ function render() {
   filtered.forEach((item, i) => {
     const row = document.createElement("div");
     row.className = i === selectedIndex ? "row active" : "row";
+    row.id = `row-${i}`;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", i === selectedIndex ? "true" : "false");
 
     const badge = document.createElement("span");
     badge.className = "badge";
@@ -142,6 +146,7 @@ function render() {
 
     listEl.appendChild(row);
   });
+  searchEl.setAttribute("aria-activedescendant", `row-${selectedIndex}`);
   listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
 }
 
