@@ -397,7 +397,10 @@ setInterval(() => {
   });
 }, 30000);
 
-onHistoryUpdated(refresh);
+// A new capture landing while the user is mid-browse shouldn't reset their
+// keyboard selection/scroll position back to the top -- same reasoning as
+// the post-delete and settings-updated refreshes below.
+onHistoryUpdated(() => refresh(false));
 // Settings changes (e.g. sort order, capture types) can change what
 // get_history returns, not just theming -- re-fetch the list too, not just
 // re-apply colors, so an already-open popup doesn't show stale ordering
