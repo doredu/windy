@@ -84,6 +84,9 @@ function render() {
     const preview = document.createElement("span");
     preview.className = "preview";
     preview.textContent = item.preview;
+    // Preview text is clipped with an ellipsis in CSS -- surface the full
+    // text on hover so long entries aren't otherwise unreadable.
+    preview.title = item.preview;
     row.appendChild(preview);
 
     if (item.size) {
