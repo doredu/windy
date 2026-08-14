@@ -23,6 +23,7 @@ pub struct HistoryItemDto {
     pub thumbnail: Option<String>,
     pub size: Option<String>,
     pub created_at: i64,
+    pub first_copied_at: i64,
     pub copy_count: i64,
 }
 
@@ -268,6 +269,7 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
         thumbnail,
         size,
         created_at: item.created_at,
+        first_copied_at: item.first_copied_at,
         copy_count,
     }
 }

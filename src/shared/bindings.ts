@@ -12,6 +12,7 @@ export interface HistoryItemDto {
   thumbnail: string | null;
   size: string | null;
   created_at: number;
+  first_copied_at: number;
   copy_count: number;
 }
 

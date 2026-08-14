@@ -384,9 +384,6 @@ pub struct HistoryItem {
     pub thumb_path: Option<String>,
     pub preview: String,
     pub created_at: i64,
-    // Populated from the DB and used by SQL ORDER BY (SortMode::order_by) --
-    // not read as Rust fields elsewhere, hence the otherwise-unused warning.
-    #[allow(dead_code)]
     pub first_copied_at: i64,
     #[allow(dead_code)]
     pub copy_count: i64,

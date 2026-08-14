@@ -72,6 +72,10 @@ const errorEl = document.getElementById("error")!;
 let items: HistoryItemDto[] = [];
 let filtered: HistoryItemDto[] = [];
 let selectedIndex = 0;
+// Tracks Settings > Storage's "Sort by" mode so the per-row time label can
+// reflect what the list is actually ordered by -- see the comment in
+// render() below.
+let sortMode: "last_copied" | "first_copied" | "most_copied" = "last_copied";
 
 document.getElementById("close")!.addEventListener("click", async () => {
   await getCurrentWindow().hide();
@@ -179,10 +183,18 @@ function render() {
       row.appendChild(size);
     }
 
+    // created_at is bumped to "now" on every re-copy (see store.rs), so it
+    // reflects last-copy time, not original-capture time. When sorted by
+    // "Time of first copy" the list order is pinned to first_copied_at and
+    // doesn't move on re-copy -- showing created_at there would make an
+    // item's age tick down on re-copy while its position in the list stays
+    // put, contradicting what it's sorted by. Show whichever timestamp the
+    // current sort mode actually orders by.
+    const timeValue = sortMode === "first_copied" ? item.first_copied_at : item.created_at;
     const time = document.createElement("span");
     time.className = "time";
-    time.textContent = formatRelativeTime(item.created_at);
-    time.title = new Date(item.created_at).toLocaleString();
+    time.textContent = formatRelativeTime(timeValue);
+    time.title = `${sortMode === "first_copied" ? "First copied" : "Last copied"}: ${new Date(timeValue).toLocaleString()}`;
     row.appendChild(time);
 
     // copy_count is only meaningful once an item has been copied more than
@@ -248,6 +260,7 @@ async function refresh(resetSelection = true) {
 
 async function applyTheme() {
   const settings = await getSettings();
+  sortMode = settings.sort_mode;
   const root = document.documentElement.style;
   root.setProperty("--popup-bg", hexToRgba(settings.popup_bg_color, settings.popup_opacity));
   // --popup-accent-bg/--popup-accent-color are set inline here unconditionally,
@@ -396,7 +409,11 @@ setInterval(() => {
   rows.forEach((row, i) => {
     const item = filtered[i];
     const timeEl = row.querySelector(".time");
-    if (item && timeEl) timeEl.textContent = formatRelativeTime(item.created_at);
+    if (item && timeEl) {
+      timeEl.textContent = formatRelativeTime(
+        sortMode === "first_copied" ? item.first_copied_at : item.created_at,
+      );
+    }
   });
 }, 30000);
 
@@ -413,5 +430,8 @@ onSettingsUpdated(async () => {
   await refresh(false);
 });
 
-applyTheme();
-refresh();
+// Sequenced (not fire-and-forget in parallel) so sortMode is populated by
+// applyTheme() before refresh()'s initial render() reads it for the .time
+// label -- otherwise the first paint could briefly use the wrong timestamp
+// field if getHistory() resolved before getSettings().
+applyTheme().then(() => refresh());
