@@ -213,8 +213,12 @@ function render() {
     preview.className = "preview";
     preview.textContent = item.preview;
     // Preview text is clipped with an ellipsis in CSS -- surface the full
-    // text on hover so long entries aren't otherwise unreadable.
-    preview.title = item.full_text ?? item.preview;
+    // text on hover so long entries aren't otherwise unreadable. full_text
+    // can be up to 200KB, so cap it here to avoid an unbounded native
+    // tooltip on large captures.
+    const fullText = item.full_text ?? item.preview;
+    preview.title =
+      fullText.length > 2000 ? `${fullText.slice(0, 2000)}…` : fullText;
     row.appendChild(preview);
 
     if (item.size) {
