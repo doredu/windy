@@ -285,7 +285,15 @@ function render() {
     // Keep keyboard selection (used by Enter/scrollIntoView) in sync with
     // the mouse -- otherwise hovering a different row than the last
     // arrow-key selection and pressing Enter would select the wrong item.
-    row.onmouseenter = () => {
+    // Uses mousemove rather than mouseenter: render() rebuilds every row from
+    // scratch on each call (including on ArrowUp/ArrowDown keypresses), and
+    // browsers resynthesize mouseenter/:hover on the new element sitting
+    // under a *stationary* cursor after a DOM change -- so with mouseenter, a
+    // keyboard-driven render() while the mouse rests anywhere over the list
+    // would immediately snap selectedIndex back to the hovered row, silently
+    // overriding the arrow-key press. mousemove only fires on genuine pointer
+    // movement, so it doesn't get triggered by the rebuild itself.
+    row.onmousemove = () => {
       if (selectedIndex === i) return;
       selectedIndex = i;
       render();
