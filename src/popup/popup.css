@@ -46,3 +46,7 @@ html.light-bg .delete { color: #1e1e22; }
 html.light-bg .delete:hover { color: #d13a3a; }
 html.light-bg .empty { color: rgba(0,0,0,0.45); }
 html.light-bg #error { color: #c0342f; background: rgba(192,52,47,0.08); border-bottom-color: rgba(192,52,47,0.2); }
+/* The doc thumbnail icon's inner lines punch out against its currentColor
+   outer shape (see popup.ts DOC_ICON_SVG) -- flip them light when the shape
+   itself turns dark in light-bg mode, or they'd vanish into the shape. */
+html.light-bg { --thumb-icon-line: #f5f5f5; }

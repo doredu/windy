@@ -18,7 +18,13 @@ import { hexToRgba, isLightColor } from "../shared/color.ts";
 const FOLDER_ICON_SVG =
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M1.5 3A1.5 1.5 0 0 1 3 1.5h3.172a1.5 1.5 0 0 1 1.06.44l1.329 1.328A.5.5 0 0 0 8.914 3H13A1.5 1.5 0 0 1 14.5 4.5v8A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Z"/></svg>`;
 const DOC_ICON_SVG =
-  `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.621a1.5 1.5 0 0 0-.44-1.06L10.44 1.94A1.5 1.5 0 0 0 9.378 1.5H4Z"/><path fill="#1e1e22" d="M5 6.5h6v1H5zM5 9h6v1H5z"/></svg>`;
+  // The second path's fill is a "punch-out" of the document lines against
+  // the outer shape, which is drawn in currentColor (light in the default
+  // dark theme, dark when the user picks a light popup background --
+  // see popup.ts applyTheme's light-bg toggle). A hardcoded dark fill here
+  // would vanish against a currentColor shape that's also dark, so it uses
+  // a themeable CSS variable instead (see popup.css --thumb-icon-line).
+  `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.621a1.5 1.5 0 0 0-.44-1.06L10.44 1.94A1.5 1.5 0 0 0 9.378 1.5H4Z"/><path fill="var(--thumb-icon-line, #1e1e22)" d="M5 6.5h6v1H5zM5 9h6v1H5z"/></svg>`;
 
 function createThumbnail(item: HistoryItemDto): HTMLElement | null {
   if (item.kind === "image") {
