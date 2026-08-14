@@ -199,7 +199,12 @@ resetRetentionDaysEl.addEventListener("click", () => {
 });
 
 function isValidStorageField(el: HTMLInputElement): boolean {
-  return !el.value || (Number.isInteger(Number(el.value)) && Number(el.value) >= 1);
+  return (
+    !el.value ||
+    (Number.isInteger(Number(el.value)) &&
+      Number(el.value) >= 1 &&
+      Number(el.value) <= Number.MAX_SAFE_INTEGER)
+  );
 }
 
 // Both fields share a single error message, so fixing one field must not
@@ -419,6 +424,16 @@ form.addEventListener("submit", async (e) => {
     maxItemsEl.focus();
     return;
   }
+  // A whole number that's still too large for the backend's i64 field would
+  // otherwise pass Number.isInteger() here but fail Tauri's IPC deserialization
+  // before set_settings's own field-specific error handling ever runs, surfacing
+  // as a raw/generic IPC error instead of this friendly message.
+  if (maxItemsEl.value && Number(maxItemsEl.value) > Number.MAX_SAFE_INTEGER) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = `Max items must be blank (unlimited) or no greater than ${Number.MAX_SAFE_INTEGER.toLocaleString()}`;
+    maxItemsEl.focus();
+    return;
+  }
   if (retentionEl.value && !Number.isInteger(Number(retentionEl.value))) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or a whole number";
@@ -428,6 +443,12 @@ form.addEventListener("submit", async (e) => {
   if (retentionEl.value && Number(retentionEl.value) < 1) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or at least 1";
+    retentionEl.focus();
+    return;
+  }
+  if (retentionEl.value && Number(retentionEl.value) > Number.MAX_SAFE_INTEGER) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = `Retention (days) must be blank (unlimited) or no greater than ${Number.MAX_SAFE_INTEGER.toLocaleString()}`;
     retentionEl.focus();
     return;
   }
