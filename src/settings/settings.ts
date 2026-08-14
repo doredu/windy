@@ -299,6 +299,11 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 document.addEventListener("keydown", (e) => {
   if (!recording) return;
+  // Let Tab/Shift+Tab move focus natively instead of swallowing them --
+  // the focusin listener above already treats focus leaving the hotkey
+  // control as an implicit cancel, so blocking Tab here would trap
+  // keyboard users on this control with no way out except Escape.
+  if (e.key === "Tab") return;
   e.preventDefault();
 
   if (e.key === "Escape") {
