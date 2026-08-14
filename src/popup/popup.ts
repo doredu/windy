@@ -195,6 +195,27 @@ document.addEventListener("keydown", async (e) => {
     render();
     return;
   }
+  // Home/End jump to the first/last row, mirroring the ArrowUp/ArrowDown
+  // wraparound above -- useful once history grows past a handful of items.
+  if (e.key === "Home") {
+    if (document.activeElement === searchEl && searchEl.selectionStart !== 0) return;
+    if (filtered.length === 0) return;
+    e.preventDefault();
+    selectedIndex = 0;
+    render();
+    return;
+  }
+  if (e.key === "End") {
+    if (
+      document.activeElement === searchEl &&
+      searchEl.selectionStart !== searchEl.value.length
+    ) return;
+    if (filtered.length === 0) return;
+    e.preventDefault();
+    selectedIndex = filtered.length - 1;
+    render();
+    return;
+  }
   if (e.key === "Enter") {
     if (!filtered[selectedIndex]) return;
     await selectItem(filtered[selectedIndex].id);
