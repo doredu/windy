@@ -370,7 +370,16 @@ document.addEventListener("keydown", (e) => {
 // unsaved-changes protection -- previously only Escape checked `dirty`,
 // so clicking the OS window's X silently discarded in-progress edits.
 async function closeIfConfirmed() {
-  if (dirty && !confirm("Discard unsaved changes?")) return;
+  if (dirty) {
+    if (!confirm("Discard unsaved changes?")) return;
+    // The Settings webview is never destroyed/reloaded when hidden (main.rs
+    // just show()/set_focus()s the same window from the tray), so without
+    // this the discarded field values -- and the dirty flag itself -- would
+    // still be sitting in the DOM the next time the window is reopened,
+    // silently reintroducing the "unsaved changes" state and blocking
+    // refreshLiveState()'s live autostart/hotkey_active refresh forever.
+    await load();
+  }
   await getCurrentWindow().hide();
 }
 
