@@ -1,11 +1,15 @@
 :root { color-scheme: dark; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", sans-serif;
   background: #1e1e22;
   color: #eee;
   padding: 18px 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .tabs {
