@@ -197,6 +197,14 @@ document.addEventListener("keydown", (e) => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   hotkeyErrorEl.textContent = "";
+  // If the user clicks Save while a hotkey recording is in progress (without
+  // pressing a key or Escape first), hotkeyEl.value still holds the literal
+  // "Press keys…" placeholder -- submitting that as the hotkey would send
+  // garbage to the backend. Treat an in-flight recording as canceled instead.
+  if (recording) {
+    hotkeyEl.value = previousHotkey;
+    stopRecording();
+  }
   const storageTab = document.getElementById("tab-storage") as HTMLButtonElement;
   // The submit handler calls preventDefault() before any native constraint
   // validation runs, so the inputs' `min="1"` attribute never actually
