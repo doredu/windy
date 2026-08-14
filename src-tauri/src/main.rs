@@ -47,7 +47,7 @@ fn main() {
             })?;
             let initial_hotkey = opened.get_setting("hotkey")?.unwrap_or_else(|| "Ctrl+Alt+V".into());
             let store = std::sync::Arc::new(std::sync::Mutex::new(opened));
-            let hotkey_handle = watcher::spawn(app.handle().clone(), store.clone(), initial_hotkey);
+            let hotkey_handle = watcher::spawn(app.handle().clone(), store.clone(), initial_hotkey.clone());
             app.manage(hotkey_handle);
             app.manage(store);
 
@@ -80,10 +80,19 @@ fn main() {
                 });
             }
 
-            let open_history = tauri::menu::MenuItemBuilder::with_id("open_history", "Open History").build(app)?;
+            // Label includes the current hotkey combo (e.g. "Open History
+            // (Ctrl+Alt+V)") so users can discover/recall the shortcut from
+            // the tray without opening Settings; kept in sync afterward by
+            // `set_settings` via the managed `TrayMenu` handle below.
+            let open_history = tauri::menu::MenuItemBuilder::with_id(
+                "open_history",
+                format!("Open History  ({initial_hotkey})"),
+            )
+            .build(app)?;
             let settings = tauri::menu::MenuItemBuilder::with_id("settings", "Settings").build(app)?;
             let quit = tauri::menu::MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let menu = tauri::menu::MenuBuilder::new(app).items(&[&open_history, &settings, &quit]).build()?;
+            app.manage(commands::TrayMenu { open_history: open_history.clone() });
 
             let mut tray_builder = tauri::tray::TrayIconBuilder::new()
                 .menu(&menu)

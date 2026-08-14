@@ -8,6 +8,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, PoisonError};
 use tauri::{AppHandle, Emitter, State};
 
+/// Holds the tray's "Open History" menu item so `set_settings` can update its
+/// label live when the hotkey changes -- otherwise the tray menu would keep
+/// showing whatever combo was active at app launch until the next restart.
+pub struct TrayMenu {
+    pub open_history: tauri::menu::MenuItem<tauri::Wry>,
+}
+
 #[derive(Serialize)]
 pub struct HistoryItemDto {
     pub id: i64,
@@ -157,6 +164,7 @@ pub fn set_settings(
     settings: SettingsDto,
     store: State<Store>,
     hotkey: State<crate::watcher::HotkeyHandle>,
+    tray_menu: State<TrayMenu>,
     app: AppHandle,
 ) -> Result<(), String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
@@ -174,6 +182,9 @@ pub fn set_settings(
     // so settings never disagree with what's actually registered.
     hotkey.rebind(settings.hotkey.clone())?;
     s.set_setting("hotkey", &settings.hotkey).map_err(|e| e.to_string())?;
+    // Keep the tray's "Open History" label in sync with the newly-rebound
+    // combo -- best-effort, a failed relabel shouldn't fail the whole save.
+    let _ = tray_menu.open_history.set_text(format!("Open History  ({})", settings.hotkey));
 
     s.set_setting("auto_check_updates", if settings.auto_check_updates { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
