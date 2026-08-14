@@ -58,6 +58,15 @@ searchEl.addEventListener("input", applyFilter);
 
 function render() {
   listEl.innerHTML = "";
+  if (filtered.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = items.length === 0
+      ? "Clipboard history is empty"
+      : "No matches";
+    listEl.appendChild(empty);
+    return;
+  }
   if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
   if (selectedIndex < 0) selectedIndex = 0;
   filtered.forEach((item, i) => {
