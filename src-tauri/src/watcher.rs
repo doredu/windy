@@ -290,7 +290,12 @@ unsafe fn run_hotkey_listener(
     if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk) {
         eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
         active.store(false, Ordering::SeqCst);
-        return;
+        // Don't exit the thread here: RegisterHotKey ties registration to
+        // this thread's message queue, and HotkeyHandle::rebind() posts
+        // REBIND_HOTKEY_MSG to this same thread. If we returned, a later
+        // rebind attempt with a different (non-conflicting) combo could
+        // never succeed without a full app restart, since the thread
+        // (and its message queue) would already be gone.
     }
 
     let mut msg = MSG::default();
