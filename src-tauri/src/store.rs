@@ -606,6 +606,13 @@ impl HistoryStore {
         Ok(paths)
     }
 
+    /// Counts every history row, ignoring the retention-days cutoff that
+    /// get_history_sorted applies -- matches what clear_all() actually
+    /// deletes, since expired rows are only pruned lazily on next capture.
+    pub fn count_all(&self) -> rusqlite::Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+    }
+
     pub fn capture(&self, item: NewItem) -> rusqlite::Result<i64> {
         let key = dedup_key(&item.dedup_source);
         let existing: Option<i64> = self

@@ -5,7 +5,7 @@ import {
   checkForUpdates,
   installUpdate,
   clearHistory,
-  getHistory,
+  countHistory,
   onWindowFocusChanged,
   onCloseRequested,
   onQuitRequested,
@@ -523,9 +523,13 @@ clearHistoryBtn.addEventListener("click", async () => {
   // The confirm prompt previously gave no sense of scale ("all clipboard
   // history" could mean 2 items or 2,000) -- showing the actual count makes
   // this destructive action's impact concrete before the user commits to it.
+  // Uses countHistory() (unfiltered row count), not getHistory().length,
+  // since getHistory applies the retention-days cutoff while clearHistory()
+  // deletes every row unconditionally -- using the filtered count would
+  // understate how many items actually get deleted.
   let count: number | undefined;
   try {
-    count = (await getHistory()).length;
+    count = await countHistory();
   } catch {
     // If the count fetch fails, fall back to the generic wording below
     // rather than blocking the clear action entirely.

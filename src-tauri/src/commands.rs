@@ -115,6 +115,11 @@ pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn count_history(store: State<Store>) -> Result<i64, String> {
+    store.lock().unwrap_or_else(PoisonError::into_inner).count_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn clear_history(app: AppHandle, store: State<Store>) -> Result<(), String> {
     let paths = store.lock().unwrap_or_else(PoisonError::into_inner).clear_all().map_err(|e| e.to_string())?;
     for path in paths {
