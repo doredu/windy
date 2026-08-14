@@ -26,6 +26,21 @@ const DOC_ICON_SVG =
   // a themeable CSS variable instead (see popup.css --thumb-icon-line).
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.621a1.5 1.5 0 0 0-.44-1.06L10.44 1.94A1.5 1.5 0 0 0 9.378 1.5H4Z"/><path fill="var(--thumb-icon-line, #1e1e22)" d="M5 6.5h6v1H5zM5 9h6v1H5z"/></svg>`;
 
+// item.created_at is a unix ms timestamp (see src-tauri store.rs) that was
+// fetched but never surfaced in the UI -- render it as a short relative age
+// so users can tell how old a history entry is at a glance.
+function formatRelativeTime(createdAtMs: number): string {
+  const diffSec = Math.max(0, Math.round((Date.now() - createdAtMs) / 1000));
+  if (diffSec < 5) return "now";
+  if (diffSec < 60) return `${diffSec}s`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHour = Math.round(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h`;
+  const diffDay = Math.round(diffHour / 24);
+  return `${diffDay}d`;
+}
+
 function createThumbnail(item: HistoryItemDto): HTMLElement | null {
   if (item.kind === "image") {
     if (!item.thumbnail) return null;
@@ -155,6 +170,12 @@ function render() {
       size.textContent = item.size;
       row.appendChild(size);
     }
+
+    const time = document.createElement("span");
+    time.className = "time";
+    time.textContent = formatRelativeTime(item.created_at);
+    time.title = new Date(item.created_at).toLocaleString();
+    row.appendChild(time);
 
     const del = document.createElement("button");
     del.className = "delete";
