@@ -157,16 +157,20 @@ pub fn quit_app(app: AppHandle, store: State<Store>) {
 }
 
 #[tauri::command]
-pub fn get_settings(store: State<Store>, hotkey: State<crate::watcher::HotkeyHandle>) -> Result<SettingsDto, String> {
+pub fn get_settings(app: AppHandle, store: State<Store>, hotkey: State<crate::watcher::HotkeyHandle>) -> Result<SettingsDto, String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+    // Reflect the real OS autostart registration rather than just echoing
+    // back the stored flag -- like `hotkey_active` below, the stored value
+    // can silently drift from reality (registry write blocked, entry removed
+    // via Windows' own Startup settings, app moved/reinstalled so the
+    // registered command line no longer matches), and the checkbox should
+    // show what will actually happen, not just what was last requested.
+    use tauri_plugin_autostart::ManagerExt;
+    let start_with_windows = app.autolaunch().is_enabled().unwrap_or(false);
     Ok(SettingsDto {
         max_items: s.get_setting("max_items").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
         retention_days: s.get_setting("retention_days").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
-        start_with_windows: s
-            .get_setting("start_with_windows")
-            .map_err(|e| e.to_string())?
-            .map(|v| v == "true")
-            .unwrap_or(false),
+        start_with_windows,
         hotkey: s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into()),
         hotkey_active: hotkey.is_active(),
         auto_check_updates: s
