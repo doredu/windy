@@ -545,19 +545,31 @@ function renderUpdateStatus(status: UpdateStatusDto) {
   }
 }
 
+// getUpdateStatus()/checkForUpdates() are triggered from several independent,
+// overlappable places (startup, window-focus, the manual "Check for updates"
+// button) with no coordination between them -- two in-flight calls can
+// resolve out of order and the later-issued-but-earlier-resolving one would
+// silently overwrite a fresher result (e.g. hiding a just-found update behind
+// a stale "Up to date"). Mirrors popup.ts's refreshSeq guard for the same bug
+// class.
+let updateCheckSeq = 0;
+
 async function manualCheck() {
   updateActionEl.disabled = true;
   const previousLabel = updateActionEl.textContent;
   updateActionEl.textContent = "Checking…";
+  const seq = ++updateCheckSeq;
   try {
     const status = await checkForUpdates();
+    if (seq !== updateCheckSeq) return;
     renderUpdateStatus(status);
   } catch {
+    if (seq !== updateCheckSeq) return;
     updateBannerEl.classList.add("error");
     updateTextEl.textContent = "Check failed — try again later";
     updateActionEl.textContent = previousLabel;
   } finally {
-    updateActionEl.disabled = false;
+    if (seq === updateCheckSeq) updateActionEl.disabled = false;
   }
 }
 
@@ -581,7 +593,9 @@ async function installNow() {
 }
 
 async function loadUpdateStatus() {
+  const seq = ++updateCheckSeq;
   const status = await getUpdateStatus();
+  if (seq !== updateCheckSeq) return;
   renderUpdateStatus(status);
 }
 
