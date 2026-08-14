@@ -10,6 +10,7 @@ import {
   onTogglePopup,
   onHistoryUpdated,
   onSettingsUpdated,
+  onCloseRequested,
   type HistoryItemDto,
 } from "../shared/bindings.ts";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
@@ -556,6 +557,18 @@ window.addEventListener("blur", async () => {
   if (!popupOpen) return;
   popupOpen = false;
   blurHideAt = Date.now();
+  await getCurrentWindow().hide();
+});
+
+// The popup has no titlebar/close button (decorations: false), but it's
+// still a normal top-level window that can receive Alt+F4 while focused
+// (e.g. right after opening, when the search box is auto-focused). main.rs
+// intercepts that native CloseRequested and emits this event instead of
+// letting Tauri destroy the window -- without it, the popup would be
+// permanently gone (hotkey and tray "Open History" both silently no-op)
+// until the whole app is restarted. Reuse the same hide() path as blur/Esc.
+onCloseRequested(async () => {
+  popupOpen = false;
   await getCurrentWindow().hide();
 });
 

@@ -96,6 +96,28 @@ fn main() {
                 });
             }
 
+            if let Some(popup_window) = app.get_webview_window("popup") {
+                let popup_window_handle = popup_window.clone();
+                popup_window.on_window_event(move |event| {
+                    use tauri::Emitter;
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        // The popup has no titlebar/close button (decorations:
+                        // false), but a focused top-level window still
+                        // receives Alt+F4 as a native CloseRequested event.
+                        // Without this guard, Tauri's default behavior lets
+                        // the close proceed and destroys the webview window --
+                        // after that, get_webview_window("popup") returns None
+                        // forever, silently breaking both the hotkey and the
+                        // tray's "Open History" item until the app is
+                        // restarted. Emit the same close-requested event the
+                        // settings window uses so popup.ts's existing hide()
+                        // path handles it.
+                        let _ = popup_window_handle.emit("close-requested", ());
+                    }
+                });
+            }
+
             // Label includes the current hotkey combo (e.g. "Open History
             // (Ctrl+Alt+V)") so users can discover/recall the shortcut from
             // the tray without opening Settings; kept in sync afterward by
