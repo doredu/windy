@@ -29,8 +29,8 @@
         "label": "settings",
         "title": "Clipboard Manager Settings",
         "url": "settings/index.html",
-        "width": 320,
-        "height": 220,
+        "width": 420,
+        "height": 480,
         "resizable": false,
         "visible": false
       }

@@ -26,9 +26,10 @@
 use crate::position::{compute_popup_position, PopupPin, PopupPositionMode};
 use crate::store::HistoryStore;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 /// A pending rebind request handed to the hotkey thread: the new combo
 /// string plus a oneshot channel the thread uses to report success/failure
@@ -46,9 +47,25 @@ struct PendingRebind {
 pub struct HotkeyHandle {
     thread_id: u32,
     pending: Arc<Mutex<Option<PendingRebind>>>,
+    // Whether the toggle combo is actually registered with Windows right now.
+    // RegisterHotKey can fail silently from the user's perspective -- e.g.
+    // another running app already owns the exact same combo, or the stored
+    // hotkey string is corrupt -- in which case the listener thread logs to
+    // stderr (invisible to a normal user) and either exits early (startup) or
+    // keeps the previous combo (rebind). Without this flag, Settings had no
+    // way to tell the user their configured hotkey doesn't actually work.
+    active: Arc<AtomicBool>,
 }
 
 impl HotkeyHandle {
+    /// Whether the configured toggle hotkey is currently registered with
+    /// Windows and will actually fire. False if `RegisterHotKey` failed at
+    /// startup (e.g. the combo is already owned by another app) or the
+    /// hotkey thread has exited.
+    pub fn is_active(&self) -> bool {
+        self.active.load(Ordering::SeqCst)
+    }
+
     /// Requests that the toggle hotkey be changed to `combo` (e.g.
     /// `"Ctrl+Alt+V"`), blocking briefly until the hotkey thread confirms
     /// the new registration succeeded (or reports why it didn't).
@@ -80,6 +97,9 @@ impl HotkeyHandle {
 ///   `store`, emitting `"history-updated"` after each successful capture.
 pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hotkey: String) -> HotkeyHandle {
     let pending: Arc<Mutex<Option<PendingRebind>>> = Arc::new(Mutex::new(None));
+    // Optimistic default; the hotkey thread flips this to `false` if the
+    // initial `RegisterHotKey` call fails before we get a chance to read it.
+    let active = Arc::new(AtomicBool::new(true));
 
     // Hotkey thread: registers `initial_hotkey` and pumps a message loop to
     // receive WM_HOTKEY (and rebind requests). Owns the thread the hotkey is
@@ -90,9 +110,10 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hot
         let app_handle = app_handle.clone();
         let pending = pending.clone();
         let store = store.clone();
+        let active = active.clone();
         let (thread_id_tx, thread_id_rx) = mpsc::channel();
         std::thread::spawn(move || unsafe {
-            run_hotkey_listener(app_handle, store, initial_hotkey, pending, thread_id_tx);
+            run_hotkey_listener(app_handle, store, initial_hotkey, pending, active, thread_id_tx);
         });
         // The hotkey thread reports its OS thread id as the first thing it
         // does, before entering the message loop -- block briefly here so
@@ -108,52 +129,34 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hot
         });
     }
 
-    HotkeyHandle { thread_id, pending }
+    HotkeyHandle { thread_id, pending, active }
 }
 
-/// tauri.conf.json's declared popup size, in *logical* pixels -- used only
-/// as a last-resort fallback below if the popup window can't be looked up
-/// (should not happen in practice, since the window is always declared).
+/// tauri.conf.json's declared popup size, in *logical* pixels -- scaled by
+/// the *target* monitor's DPI (see `monitor_dpi_scale`) to get the physical
+/// size the popup will actually render at once Windows finishes moving it.
 const POPUP_LOGICAL_SIZE: (f64, f64) = (320.0, 340.0);
 
-/// Returns the popup window's actual size in *physical* pixels, matching
-/// the unit `GetCursorPos`/`clamp_popup_position` operate in. Uses the live
-/// window's `outer_size()` (already physical) rather than a hardcoded
-/// tuple, since a hardcoded logical-pixel guess can under-clamp on displays
-/// scaled above 100%.
-fn popup_physical_size(app_handle: &AppHandle) -> (i32, i32) {
-    if let Some(window) = app_handle.get_webview_window("popup") {
-        if let Ok(size) = window.outer_size() {
-            return (size.width as i32, size.height as i32);
-        }
-        if let Ok(scale) = window.scale_factor() {
-            return (
-                (POPUP_LOGICAL_SIZE.0 * scale) as i32,
-                (POPUP_LOGICAL_SIZE.1 * scale) as i32,
-            );
-        }
-    }
-    // Last resort: assume 100% scaling.
-    (POPUP_LOGICAL_SIZE.0 as i32, POPUP_LOGICAL_SIZE.1 as i32)
+/// Returns the handle of whichever monitor contains `cursor`, via
+/// `MonitorFromPoint` with `MONITOR_DEFAULTTONEAREST` (always returns a
+/// valid handle, even for off-screen points).
+fn monitor_at(cursor: (i32, i32)) -> windows::Win32::Graphics::Gdi::HMONITOR {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
+
+    unsafe { MonitorFromPoint(POINT { x: cursor.0, y: cursor.1 }, MONITOR_DEFAULTTONEAREST) }
 }
 
 /// Returns the work-area bounds (i.e. excluding the taskbar), in
-/// virtual-screen coordinates, of whichever monitor contains `cursor`.
+/// virtual-screen coordinates, of `monitor`.
 ///
 /// Falls back to a (0, 0, 0, 0) bounds box (which `clamp_popup_position`
 /// will clamp the popup's origin into) if `GetMonitorInfoW` fails -- this
-/// should never happen in practice since `MonitorFromPoint` with
-/// `MONITOR_DEFAULTTONEAREST` always returns a valid monitor handle.
-fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    };
+/// should never happen in practice given a handle from `MonitorFromPoint`.
+fn monitor_bounds(monitor: windows::Win32::Graphics::Gdi::HMONITOR) -> (i32, i32, i32, i32) {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
 
     unsafe {
-        let point = POINT { x: cursor.0, y: cursor.1 };
-        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
-
         let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
         if !GetMonitorInfoW(monitor, &mut info).as_bool() {
             eprintln!("watcher: GetMonitorInfoW failed; popup positioning may be wrong");
@@ -163,6 +166,65 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
         let rc = info.rcWork;
         (rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top)
     }
+}
+
+/// Returns `monitor`'s DPI scale factor (1.0 == 96 DPI == 100%), falling
+/// back to 1.0 if `GetDpiForMonitor` fails.
+fn monitor_dpi_scale(monitor: windows::Win32::Graphics::Gdi::HMONITOR) -> f64 {
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    let mut dpi_x: u32 = 96;
+    let mut dpi_y: u32 = 96;
+    unsafe {
+        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_err() {
+            return 1.0;
+        }
+    }
+    dpi_x as f64 / 96.0
+}
+
+/// Computes the popup's cursor-relative position (respecting the user's
+/// `popup_position`/`popup_pin` settings) and emits `"toggle-popup"` with it,
+/// exactly as the global hotkey does. Also used by the tray icon/menu's
+/// "open history" actions (main.rs) so opening the popup from the tray
+/// positions it the same way instead of leaving it wherever it last was
+/// shown/hidden.
+pub fn emit_toggle_popup(app_handle: &AppHandle, store: &Arc<Mutex<HistoryStore>>) {
+    let cursor = crate::win32::cursor_position();
+    let (mode, pin) = {
+        let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+        (
+            PopupPositionMode::parse(&s.get_setting("popup_position").ok().flatten().unwrap_or_default()),
+            PopupPin::parse(&s.get_setting("popup_pin").ok().flatten().unwrap_or_default()),
+        )
+    };
+    let foreground_window = crate::win32::foreground_window_rect();
+    // Resolve the *target* monitor once and derive both the screen bounds
+    // and the popup's expected physical size from it. Using the popup
+    // window's own (pre-move) `outer_size()` here would reflect whatever
+    // monitor/DPI it currently happens to be sitting on -- wrong when
+    // toggling it open onto a *different* monitor with a different DPI
+    // scale factor (e.g. a 100%-scaled laptop panel + a 250%-scaled
+    // external display), which could clamp the position against the wrong
+    // physical size and leave the popup rendered partially off-screen.
+    //
+    // For "window_center" mode the anchor is the foreground window's
+    // center, not the cursor -- on a multi-monitor setup the mouse can be
+    // resting on a different monitor than the focused window (e.g. after
+    // alt-tabbing), so the target monitor must be resolved from the
+    // window's center point in that case, not from the cursor, or the
+    // popup gets clamped against the wrong monitor's bounds/DPI entirely.
+    let anchor_point = if mode == PopupPositionMode::WindowCenter {
+        foreground_window.map(|(wx, wy, ww, wh)| (wx + ww / 2, wy + wh / 2)).unwrap_or(cursor)
+    } else {
+        cursor
+    };
+    let monitor = monitor_at(anchor_point);
+    let screen = monitor_bounds(monitor);
+    let scale = monitor_dpi_scale(monitor);
+    let popup_size = ((POPUP_LOGICAL_SIZE.0 * scale) as i32, (POPUP_LOGICAL_SIZE.1 * scale) as i32);
+    let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
+    let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
 }
 
 /// Arbitrary id identifying our hotkey registration to `RegisterHotKey`/
@@ -199,6 +261,15 @@ fn parse_hotkey(combo: &str) -> Result<(windows::Win32::UI::Input::KeyboardAndMo
                 }
                 vk = Some(key.chars().next().unwrap() as u32);
             }
+            // VK_SPACE == 0x20 -- unlike the letter/digit branch above, the
+            // spacebar has no single-char ASCII representation to reuse, so
+            // it needs its own literal virtual-key code.
+            "SPACE" => {
+                if vk.is_some() {
+                    return Err(format!("multiple keys in \"{combo}\" -- only one non-modifier key is supported"));
+                }
+                vk = Some(0x20);
+            }
             other => return Err(format!("unsupported key \"{other}\" in \"{combo}\"")),
         }
     }
@@ -220,6 +291,7 @@ unsafe fn run_hotkey_listener(
     store: Arc<Mutex<HistoryStore>>,
     initial_hotkey: String,
     pending: Arc<Mutex<Option<PendingRebind>>>,
+    active: Arc<AtomicBool>,
     thread_id_tx: mpsc::Sender<u32>,
 ) {
     use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -228,34 +300,33 @@ unsafe fn run_hotkey_listener(
 
     let _ = thread_id_tx.send(GetCurrentThreadId());
 
+    // `modifiers`/`vk` are `None` whenever there's no currently-registered
+    // combo (either the stored value failed to parse, or RegisterHotKey
+    // itself failed) -- kept as an Option rather than exiting the thread in
+    // that case, since HotkeyHandle::rebind() posts REBIND_HOTKEY_MSG to
+    // this same thread and needs it to keep pumping messages so a later,
+    // valid rebind from Settings can still succeed without an app restart.
     let (mut modifiers, mut vk) = match parse_hotkey(&initial_hotkey) {
-        Ok(parsed) => parsed,
+        Ok((m, v)) => {
+            if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, m, v) {
+                eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
+                active.store(false, Ordering::SeqCst);
+                (None, None)
+            } else {
+                (Some(m), Some(v))
+            }
+        }
         Err(e) => {
             eprintln!("watcher: invalid stored hotkey \"{initial_hotkey}\" ({e}); the toggle is disabled");
-            return;
+            active.store(false, Ordering::SeqCst);
+            (None, None)
         }
     };
-    if let Err(e) = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk) {
-        eprintln!("watcher: RegisterHotKey failed, the {initial_hotkey} toggle is disabled: {e}");
-        return;
-    }
 
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
         if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == TOGGLE_HOTKEY_ID {
-            let cursor = crate::win32::cursor_position();
-            let popup_size = popup_physical_size(&app_handle);
-            let screen = monitor_bounds_at(cursor);
-            let (mode, pin) = {
-                let s = store.lock().unwrap_or_else(PoisonError::into_inner);
-                (
-                    PopupPositionMode::parse(&s.get_setting("popup_position").ok().flatten().unwrap_or_default()),
-                    PopupPin::parse(&s.get_setting("popup_pin").ok().flatten().unwrap_or_default()),
-                )
-            };
-            let foreground_window = crate::win32::foreground_window_rect();
-            let (px, py) = compute_popup_position(mode, pin, cursor, foreground_window, popup_size, screen);
-            let _ = app_handle.emit("toggle-popup", serde_json::json!({ "x": px, "y": py }));
+            emit_toggle_popup(&app_handle, &store);
         } else if msg.message == REBIND_HOTKEY_MSG {
             let Some(PendingRebind { combo, result_tx }) = pending.lock().unwrap_or_else(PoisonError::into_inner).take() else {
                 continue;
@@ -263,18 +334,35 @@ unsafe fn run_hotkey_listener(
             let result = match parse_hotkey(&combo) {
                 Err(e) => Err(e),
                 Ok((new_modifiers, new_vk)) => {
-                    let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
+                    if modifiers.is_some() {
+                        let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
+                    }
                     match RegisterHotKey(None, TOGGLE_HOTKEY_ID, new_modifiers, new_vk) {
                         Ok(()) => {
-                            modifiers = new_modifiers;
-                            vk = new_vk;
+                            modifiers = Some(new_modifiers);
+                            vk = Some(new_vk);
+                            active.store(true, Ordering::SeqCst);
                             Ok(())
                         }
                         Err(e) => {
                             // Best-effort: restore the previous combo so the
-                            // toggle isn't left completely unbound.
-                            let _ = RegisterHotKey(None, TOGGLE_HOTKEY_ID, modifiers, vk);
-                            Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
+                            // toggle isn't left completely unbound. If even
+                            // that re-registration fails (e.g. the combo was
+                            // just taken by another app mid-rebind), the
+                            // toggle is now genuinely unbound -- reflect that.
+                            // There may be no previous combo at all (the
+                            // initial stored hotkey was invalid/unregistered),
+                            // in which case there's nothing to restore.
+                            let restored = match (modifiers, vk) {
+                                (Some(m), Some(v)) => RegisterHotKey(None, TOGGLE_HOTKEY_ID, m, v).is_ok(),
+                                _ => false,
+                            };
+                            active.store(restored, Ordering::SeqCst);
+                            if restored {
+                                Err(format!("couldn't register \"{combo}\": {e} (reverted to the previous hotkey)"))
+                            } else {
+                                Err(format!("couldn't register \"{combo}\": {e} (the toggle is now unbound)"))
+                            }
                         }
                     }
                 }
@@ -386,7 +474,11 @@ unsafe extern "system" fn listener_wndproc(
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             LISTENER_CTX.with(|cell| {
                 if let Some((app_handle, store)) = cell.borrow().as_ref() {
-                    if let Some(item) = crate::clipboard_io::capture_current_clipboard() {
+                    let image_capture_enabled = {
+                        let store = store.lock().unwrap_or_else(PoisonError::into_inner);
+                        kind_is_captured(&store, "image")
+                    };
+                    if let Some(item) = crate::clipboard_io::capture_current_clipboard(image_capture_enabled) {
                         let store = store.lock().unwrap_or_else(PoisonError::into_inner);
                         if !kind_is_captured(&store, &item.kind) {
                             return;
@@ -445,5 +537,12 @@ mod tests {
     #[test]
     fn rejects_unsupported_token() {
         assert!(parse_hotkey("Ctrl+F1").is_err());
+    }
+
+    #[test]
+    fn parses_ctrl_space() {
+        let (mods, vk) = parse_hotkey("Ctrl+SPACE").unwrap();
+        assert_eq!(mods.0, MOD_CONTROL.0 | MOD_NOREPEAT.0);
+        assert_eq!(vk, 0x20);
     }
 }

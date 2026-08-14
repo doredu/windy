@@ -8,6 +8,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, PoisonError};
 use tauri::{AppHandle, Emitter, State};
 
+/// Holds the tray's "Open History" menu item so `set_settings` can update its
+/// label live when the hotkey changes -- otherwise the tray menu would keep
+/// showing whatever combo was active at app launch until the next restart.
+pub struct TrayMenu {
+    pub open_history: tauri::menu::MenuItem<tauri::Wry>,
+}
+
 #[derive(Serialize)]
 pub struct HistoryItemDto {
     pub id: i64,
@@ -16,6 +23,18 @@ pub struct HistoryItemDto {
     pub thumbnail: Option<String>,
     pub size: Option<String>,
     pub created_at: i64,
+    pub first_copied_at: i64,
+    pub copy_count: i64,
+    // Full (untruncated) lowercased text content for text/richtext items,
+    // used by the popup's search box so it can match beyond the 120-char
+    // `preview` snippet. `None` for kinds where `preview` already covers
+    // everything searchable (files, images).
+    pub search_text: Option<String>,
+    // Full (untruncated), original-case text content for text/richtext
+    // items, used by the popup's hover tooltip so it can show more than the
+    // same 120-char `preview` snippet the row already displays. `None` for
+    // kinds where `preview` already covers everything (files, images).
+    pub full_text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -24,6 +43,14 @@ pub struct SettingsDto {
     pub retention_days: Option<i64>,
     pub start_with_windows: bool,
     pub hotkey: String,
+    // Not persisted -- reflects the live hotkey thread's actual registration
+    // state (crate::watcher::HotkeyHandle::is_active) at the moment
+    // get_settings is called, so the frontend can warn if the configured
+    // combo silently isn't working (e.g. owned by another running app).
+    // `set_settings` never reads this field (ignored on the way in), so it
+    // defaults rather than requiring the frontend to round-trip it.
+    #[serde(default)]
+    pub hotkey_active: bool,
     pub auto_check_updates: bool,
     pub sort_mode: String,
     pub capture_types: Vec<String>,
@@ -73,8 +100,12 @@ pub fn get_history(store: State<Store>) -> Result<Vec<HistoryItemDto>, String> {
 
 #[tauri::command]
 pub fn select_item(id: i64, store: State<Store>) -> Result<(), String> {
-    let history = store.lock().unwrap_or_else(PoisonError::into_inner).get_history().map_err(|e| e.to_string())?;
-    let item = history.into_iter().find(|i| i.id == id).ok_or("item not found")?;
+    let item = store
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_item(id)
+        .map_err(|e| e.to_string())?
+        .ok_or("item not found")?;
     crate::clipboard_io::write_item_to_clipboard(&item)
 }
 
@@ -88,17 +119,83 @@ pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
+pub fn count_history(store: State<Store>) -> Result<i64, String> {
+    store.lock().unwrap_or_else(PoisonError::into_inner).count_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_history(app: AppHandle, store: State<Store>) -> Result<(), String> {
+    let paths = store.lock().unwrap_or_else(PoisonError::into_inner).clear_all().map_err(|e| e.to_string())?;
+    for path in paths {
+        let _ = std::fs::remove_file(path);
+    }
+    // Without this, a popup window already open at the time history is
+    // cleared from Settings would keep showing the now-deleted rows until
+    // the next capture event or the next time it's toggled open.
+    let _ = app.emit("history-updated", ());
+    Ok(())
+}
+
+/// Applies `clear_history_on_quit`/`clear_clipboard_on_quit` (if enabled).
+/// Shared by every path that ends the running process -- `perform_quit`
+/// below and `install_update`'s restart-for-update -- so a user who opted
+/// into wiping history/clipboard on quit gets that guarantee regardless of
+/// *why* the process is about to stop, not just for an explicit Quit.
+fn apply_clear_on_quit(store: &Store) {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+    let clear_history = s.get_setting("clear_history_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let clear_clipboard = s.get_setting("clear_clipboard_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+    if clear_history {
+        if let Ok(paths) = s.clear_all() {
+            for path in paths {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    drop(s);
+    if clear_clipboard {
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            let _ = clipboard.clear();
+        }
+    }
+}
+
+/// Applies clear-on-quit settings (if enabled) and exits the process. Shared
+/// by the tray's Quit menu item (used directly when the Settings window
+/// isn't open) and the `quit_app` command below (called once the Settings
+/// window's own unsaved-changes prompt has been resolved).
+pub fn perform_quit(app: &AppHandle, store: &Store) {
+    apply_clear_on_quit(store);
+    app.exit(0);
+}
+
+/// Called from the Settings window once it has resolved its own
+/// unsaved-changes prompt (see `quit-requested` in main.rs) -- the tray's
+/// Quit item used to call `app.exit(0)` unconditionally, silently discarding
+/// any in-progress Settings edits with no warning, unlike every other close
+/// path in this app (Escape, the titlebar X).
+#[tauri::command]
+pub fn quit_app(app: AppHandle, store: State<Store>) {
+    perform_quit(&app, store.inner());
+}
+
+#[tauri::command]
+pub fn get_settings(app: AppHandle, store: State<Store>, hotkey: State<crate::watcher::HotkeyHandle>) -> Result<SettingsDto, String> {
+    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+    // Reflect the real OS autostart registration rather than just echoing
+    // back the stored flag -- like `hotkey_active` below, the stored value
+    // can silently drift from reality (registry write blocked, entry removed
+    // via Windows' own Startup settings, app moved/reinstalled so the
+    // registered command line no longer matches), and the checkbox should
+    // show what will actually happen, not just what was last requested.
+    use tauri_plugin_autostart::ManagerExt;
+    let start_with_windows = app.autolaunch().is_enabled().unwrap_or(false);
     Ok(SettingsDto {
         max_items: s.get_setting("max_items").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
         retention_days: s.get_setting("retention_days").map_err(|e| e.to_string())?.and_then(|v| v.parse().ok()),
-        start_with_windows: s
-            .get_setting("start_with_windows")
-            .map_err(|e| e.to_string())?
-            .map(|v| v == "true")
-            .unwrap_or(false),
+        start_with_windows,
         hotkey: s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into()),
+        hotkey_active: hotkey.is_active(),
         auto_check_updates: s
             .get_setting("auto_check_updates")
             .map_err(|e| e.to_string())?
@@ -143,23 +240,69 @@ pub fn set_settings(
     settings: SettingsDto,
     store: State<Store>,
     hotkey: State<crate::watcher::HotkeyHandle>,
+    tray_menu: State<TrayMenu>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(v) = settings.max_items {
-        s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?;
+    // Applied to the live hotkey listener thread first, and before any
+    // setting is persisted -- if the combo is invalid or already claimed by
+    // another app, bail before writing anything, so a failed save can never
+    // leave a partial set of fields (e.g. max_items) silently committed
+    // while the UI reports the whole save as failed.
+    //
+    // Unlike the DB writes below, this has no natural rollback: RegisterHotKey
+    // takes effect on the OS immediately and isn't part of the sqlite
+    // transaction. So if a *later* fallible step (autostart) fails, the live
+    // hotkey registration would otherwise be left pointing at the new combo
+    // while get_settings/the DB/the tray label all still report the old one
+    // -- silently splitting "what's registered" from "what's displayed" until
+    // the next successful save or app restart. Remember the previous combo so
+    // that case can be explicitly reverted below.
+    let previous_hotkey = {
+        let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+        s.get_setting("hotkey").map_err(|e| e.to_string())?.unwrap_or_else(|| "Ctrl+Alt+V".into())
+    };
+    hotkey.rebind(settings.hotkey.clone())?;
+
+    // Same reasoning applies to the OS autostart registration: it's the only
+    // other fallible external side effect in this command (e.g. registry
+    // write denied by group policy). It used to run *after* every DB write
+    // below, so a failure here would return Err while every other field the
+    // user edited (colors, hotkey, retention, sort mode, ...) was already
+    // durably committed -- the UI would report the whole save as failed and
+    // leave "Unsaved changes" showing, even though most of it had in fact
+    // saved. Attempt it first so a failure aborts before anything is written.
+    use tauri_plugin_autostart::ManagerExt;
+    let autostart = app.autolaunch();
+    let autostart_result = if settings.start_with_windows {
+        autostart.enable().map_err(|e| format!("Couldn't enable \"Start with Windows\": {e}"))
+    } else {
+        autostart.disable().map_err(|e| format!("Couldn't disable \"Start with Windows\": {e}"))
+    };
+    if let Err(e) = autostart_result {
+        // Best-effort revert so the live hotkey registration doesn't outlive
+        // the failed save -- if this also fails, the user is left with a
+        // stale-but-consistent warning next time Settings polls hotkey_active
+        // rather than a silently mismatched combo.
+        let _ = hotkey.rebind(previous_hotkey);
+        return Err(e);
     }
-    if let Some(v) = settings.retention_days {
-        s.set_setting("retention_days", &v.to_string()).map_err(|e| e.to_string())?;
+
+    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+    match settings.max_items {
+        Some(v) => s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?,
+        None => s.delete_setting("max_items").map_err(|e| e.to_string())?,
+    }
+    match settings.retention_days {
+        Some(v) => s.set_setting("retention_days", &v.to_string()).map_err(|e| e.to_string())?,
+        None => s.delete_setting("retention_days").map_err(|e| e.to_string())?,
     }
     s.set_setting("start_with_windows", if settings.start_with_windows { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
 
-    // Applied to the live hotkey listener thread first -- if the combo is
-    // invalid or already claimed by another app, bail before persisting it
-    // so settings never disagree with what's actually registered.
-    hotkey.rebind(settings.hotkey.clone())?;
     s.set_setting("hotkey", &settings.hotkey).map_err(|e| e.to_string())?;
+    // Keep the tray's "Open History" label in sync with the newly-rebound
+    // combo -- best-effort, a failed relabel shouldn't fail the whole save.
+    let _ = tray_menu.open_history.set_text(format!("Open History  ({})", settings.hotkey));
 
     s.set_setting("auto_check_updates", if settings.auto_check_updates { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
@@ -176,17 +319,17 @@ pub fn set_settings(
         .map_err(|e| e.to_string())?;
     s.set_setting("clear_clipboard_on_quit", if settings.clear_clipboard_on_quit { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
+
+    // max_items/retention_days are otherwise only enforced lazily inside
+    // capture() -- without this, lowering either limit here would report a
+    // successful save while any already-open popup (and the DB/disk) kept
+    // every over-the-new-limit row until the next clipboard capture, unlike
+    // retention_days' cutoff which get_history_sorted already applies live.
+    s.prune().map_err(|e| e.to_string())?;
     drop(s);
 
-    use tauri_plugin_autostart::ManagerExt;
-    let autostart = app.autolaunch();
-    if settings.start_with_windows {
-        let _ = autostart.enable();
-    } else {
-        let _ = autostart.disable();
-    }
-
     let _ = app.emit("settings-updated", ());
+    let _ = app.emit("history-updated", ());
     Ok(())
 }
 
@@ -201,6 +344,29 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
             .map(|bytes| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
     });
     let size = item_size(&item);
+    let copy_count = item.copy_count;
+    let search_text = match item.kind.as_str() {
+        "text" => item.content.as_deref().map(|s| s.to_lowercase()),
+        "richtext" => item.content_alt.as_deref().map(|s| s.to_lowercase()),
+        "files" => item
+            .content
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .map(|paths| paths.join("\n").to_lowercase()),
+        _ => None,
+    };
+    let full_text = match item.kind.as_str() {
+        "text" => item.content.clone(),
+        "richtext" => item.content_alt.clone(),
+        "files" => item.content.as_deref().and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).map(|paths| {
+            paths
+                .iter()
+                .map(|p| std::path::Path::new(p).file_name().and_then(|n| n.to_str()).unwrap_or(p.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }),
+        _ => None,
+    };
     HistoryItemDto {
         id: item.id,
         kind: item.kind,
@@ -208,6 +374,10 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
         thumbnail,
         size,
         created_at: item.created_at,
+        first_copied_at: item.first_copied_at,
+        copy_count,
+        search_text,
+        full_text,
     }
 }
 
@@ -243,6 +413,7 @@ fn item_size(item: &crate::store::HistoryItem) -> Option<String> {
             let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).ok()?;
             Some(format!("{} file{}", paths.len(), if paths.len() == 1 { "" } else { "s" }))
         }
+        "richtext" => item.content_alt.as_ref().map(|c| format_size(c.len() as u64)),
         _ => item.content.as_ref().map(|c| format_size(c.len() as u64)),
     }
 }
@@ -266,7 +437,7 @@ async fn run_check(app: &AppHandle, state: &State<'_, UpdateState>) -> Result<Up
         }
         Err(e) => {
             eprintln!("update check failed: {e}");
-            Ok(UpdateStatusDto::none())
+            Err(e.to_string())
         }
     }
 }
@@ -283,9 +454,13 @@ pub async fn check_for_updates(app: AppHandle, state: State<'_, UpdateState>) ->
 }
 
 #[tauri::command]
-pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>) -> Result<(), String> {
+pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>, store: State<'_, Store>) -> Result<(), String> {
     let update = state.lock().unwrap_or_else(PoisonError::into_inner).clone().ok_or("no update available")?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    // request_restart() ends this process just like a Quit does -- honor the
+    // same clear-on-quit settings so they aren't silently bypassed by
+    // updating instead of quitting (see apply_clear_on_quit's doc comment).
+    apply_clear_on_quit(store.inner());
     app.request_restart();
     Ok(())
 }
@@ -371,7 +546,11 @@ mod tests {
         let item = HistoryItem {
             id: 1,
             kind: "richtext".into(),
-            content: Some("x".repeat(2048)),
+            // content (HTML markup) and content_alt (plain-text) deliberately
+            // differ in length so this test proves the size badge is derived
+            // from content_alt (what the preview/tooltip actually show for
+            // richtext), not the hidden HTML markup in content.
+            content: Some("x".repeat(9000)),
             content_alt: Some("x".repeat(2048)),
             image_path: None,
             thumb_path: None,
@@ -421,5 +600,42 @@ mod tests {
             copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("3 files"));
+    }
+
+    #[test]
+    fn dto_conversion_populates_search_text_for_files_from_full_path_list() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(r#"["C:\\Docs\\Invoice.pdf","C:\\Docs\\Notes.txt"]"#.into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "2 files: Invoice.pdf, Notes.txt".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let search_text = history_item_to_dto(item).search_text.unwrap();
+        assert!(search_text.contains("invoice.pdf"));
+        assert!(search_text.contains("notes.txt"));
+    }
+
+    #[test]
+    fn dto_conversion_populates_full_text_for_files_with_every_file_name() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(r#"["C:\\Docs\\Invoice.pdf","C:\\Docs\\Notes.txt","C:\\Docs\\Extra.txt"]"#.into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "3 files: Invoice.pdf, Notes.txt, Ex".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let full_text = history_item_to_dto(item).full_text.unwrap();
+        assert_eq!(full_text, "Invoice.pdf, Notes.txt, Extra.txt");
     }
 }

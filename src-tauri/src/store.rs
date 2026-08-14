@@ -155,6 +155,35 @@ mod tests {
     }
 
     #[test]
+    fn prune_respects_most_copied_sort_mode() {
+        // With sort_mode = most_copied, pruning must keep the most-copied
+        // rows, not just the most-recently-*last-copied* ones -- otherwise a
+        // heavily reused item can be silently evicted while sorted display
+        // still implies "most copied" survives longest.
+        let store = mem_store();
+        store.set_setting("sort_mode", "most_copied").unwrap();
+        store.set_setting("max_items", "2").unwrap();
+
+        store.capture(text_item("popular")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("popular")).unwrap(); // copy_count = 2, but stale created_at
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        store.capture(text_item("one-off-1")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("one-off-2")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.capture(text_item("one-off-3")).unwrap(); // pushes total past max_items = 2
+
+        let contents: Vec<Option<String>> =
+            store.get_history().unwrap().into_iter().map(|h| h.content).collect();
+        assert!(
+            contents.contains(&Some("popular".to_string())),
+            "the most-copied item must survive pruning even though it wasn't the most recently copied: {contents:?}"
+        );
+    }
+
+    #[test]
     fn settings_round_trip() {
         let store = mem_store();
         // `open()` seeds defaults, so overwrite retention_days explicitly and
@@ -292,6 +321,28 @@ mod tests {
     }
 
     #[test]
+    fn get_history_sorted_excludes_items_older_than_retention_days_without_a_new_capture() {
+        let store = mem_store();
+        store.set_setting("retention_days", "1").unwrap();
+        store.capture(text_item("stale")).unwrap();
+        store.capture(text_item("fresh")).unwrap();
+        // Simulate the "stale" item having been captured 2 days ago, with no
+        // subsequent capture (and therefore no prune()) ever happening --
+        // get_history_sorted must still exclude it at read time.
+        let two_days_ago = now_ms() - 2 * 24 * 60 * 60 * 1000;
+        store
+            .conn
+            .execute(
+                "UPDATE items SET created_at = ?1 WHERE content = 'stale'",
+                params![two_days_ago],
+            )
+            .unwrap();
+        let history = store.get_history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].content.as_deref(), Some("fresh"));
+    }
+
+    #[test]
     fn clear_all_removes_every_row_and_returns_image_paths() {
         let store = mem_store();
         let dir = std::env::temp_dir().join(format!("cm-clearall-test-{}", std::process::id()));
@@ -373,7 +424,7 @@ mod tests {
     }
 }
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub struct HistoryItem {
     pub id: i64,
@@ -384,9 +435,6 @@ pub struct HistoryItem {
     pub thumb_path: Option<String>,
     pub preview: String,
     pub created_at: i64,
-    // Populated from the DB and used by SQL ORDER BY (SortMode::order_by) --
-    // not read as Rust fields elsewhere, hence the otherwise-unused warning.
-    #[allow(dead_code)]
     pub first_copied_at: i64,
     #[allow(dead_code)]
     pub copy_count: i64,
@@ -558,6 +606,13 @@ impl HistoryStore {
         Ok(paths)
     }
 
+    /// Counts every history row, ignoring the retention-days cutoff that
+    /// get_history_sorted applies -- matches what clear_all() actually
+    /// deletes, since expired rows are only pruned lazily on next capture.
+    pub fn count_all(&self) -> rusqlite::Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+    }
+
     pub fn capture(&self, item: NewItem) -> rusqlite::Result<i64> {
         let key = dedup_key(&item.dedup_source);
         let existing: Option<i64> = self
@@ -606,12 +661,16 @@ impl HistoryStore {
     }
 
     pub fn get_history_sorted(&self, mode: &SortMode) -> rusqlite::Result<Vec<HistoryItem>> {
+        let cutoff = self
+            .get_setting("retention_days")?
+            .and_then(|v| v.parse::<i64>().ok())
+            .map(|days| now_ms() - days * 24 * 60 * 60 * 1000);
         let mut stmt = self.conn.prepare(&format!(
             "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at, first_copied_at, copy_count
-             FROM items ORDER BY {}",
+             FROM items WHERE created_at >= ?1 ORDER BY {}",
             mode.order_by()
         ))?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![cutoff.unwrap_or(i64::MIN)], |row| {
             Ok(HistoryItem {
                 id: row.get(0)?,
                 kind: row.get(1)?,
@@ -626,6 +685,34 @@ impl HistoryStore {
             })
         })?;
         rows.collect()
+    }
+
+    /// Looks up a single row by id regardless of the retention-days cutoff,
+    /// mirroring delete_item's unfiltered lookup -- unlike get_history_sorted,
+    /// this must still find an item that's still visible in an already-open
+    /// popup even if it has aged out of the retention window.
+    pub fn get_item(&self, id: i64) -> rusqlite::Result<Option<HistoryItem>> {
+        self.conn
+            .query_row(
+                "SELECT id, kind, content, content_alt, image_path, thumb_path, preview, created_at, first_copied_at, copy_count
+                 FROM items WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        kind: row.get(1)?,
+                        content: row.get(2)?,
+                        content_alt: row.get(3)?,
+                        image_path: row.get(4)?,
+                        thumb_path: row.get(5)?,
+                        preview: row.get(6)?,
+                        created_at: row.get(7)?,
+                        first_copied_at: row.get(8)?,
+                        copy_count: row.get(9)?,
+                    })
+                },
+            )
+            .optional()
     }
 
     /// Deletes the row and returns every on-disk path (full image and/or
@@ -664,20 +751,32 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn delete_setting(&self, key: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
     /// Deletes rows past `max_items`/`retention_days`, and also removes the
     /// on-disk image/thumbnail files for any evicted row that had them --
     /// otherwise pruned/duplicate images would orphan files under the app
     /// data dir forever, since SQLite deletion alone never touches the
     /// filesystem.
-    fn prune(&self) -> rusqlite::Result<()> {
+    pub fn prune(&self) -> rusqlite::Result<()> {
         let mut evicted_paths: Vec<String> = Vec::new();
 
         if let Some(max) = self.get_setting("max_items")?.and_then(|v| v.parse::<i64>().ok()) {
-            evicted_paths.extend(self.paths_outside_limit(max)?);
+            let mode = self
+                .get_setting("sort_mode")?
+                .map(|v| SortMode::parse(&v))
+                .unwrap_or(SortMode::LastCopied);
+            evicted_paths.extend(self.paths_outside_limit(max, &mode)?);
             self.conn.execute(
-                "DELETE FROM items WHERE id NOT IN (
-                    SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
-                )",
+                &format!(
+                    "DELETE FROM items WHERE id NOT IN (
+                        SELECT id FROM items ORDER BY {} LIMIT ?1
+                    )",
+                    mode.order_by()
+                ),
                 params![max],
             )?;
         }
@@ -693,12 +792,13 @@ impl HistoryStore {
         Ok(())
     }
 
-    fn paths_outside_limit(&self, max: i64) -> rusqlite::Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+    fn paths_outside_limit(&self, max: i64, mode: &SortMode) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(&format!(
             "SELECT image_path, thumb_path FROM items WHERE id NOT IN (
-                SELECT id FROM items ORDER BY created_at DESC LIMIT ?1
+                SELECT id FROM items ORDER BY {} LIMIT ?1
             )",
-        )?;
+            mode.order_by()
+        ))?;
         let rows = stmt.query_map(params![max], |row| {
             Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
         })?;

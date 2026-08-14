@@ -1,11 +1,15 @@
 :root { color-scheme: dark; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", sans-serif;
   background: #1e1e22;
   color: #eee;
   padding: 18px 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .tabs {
@@ -13,6 +17,18 @@ body {
   gap: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   margin-bottom: 16px;
+  /* Iteration 81 made `body` the scroll container for tab-panel content
+     that overflows the fixed-size window (still possible on the taller tabs
+     even at the current 420x480). Without this, scrolling down
+     a long panel (e.g. Storage, with 4+ stacked fields) also scrolls the
+     tab bar itself out of view, stranding the user with no way to switch
+     tabs except scrolling back up first. Pin it to the top of the scroll
+     container instead, with an opaque background so content doesn't show
+     through underneath it while scrolled. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1e1e22;
 }
 
 .tab {
@@ -42,7 +58,13 @@ form { display: flex; flex-direction: column; gap: 14px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 
-label { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+fieldset.field { border: none; margin: 0; padding: 0; }
+
+label, legend { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+legend { padding: 0; }
+
+#popupOpacityValue, .hex-value { color: rgba(255, 255, 255, 0.4); font-variant-numeric: tabular-nums; }
+.hex-value { font-family: monospace; text-transform: uppercase; }
 
 input[type="number"] {
   background: rgba(255, 255, 255, 0.06);
@@ -83,6 +105,10 @@ input[type="text"]#hotkey.recording {
   color: rgba(255, 255, 255, 0.5);
 }
 
+input[type="text"]#hotkey:focus-visible {
+  border-color: #4f8cff;
+}
+
 .hotkey-row button {
   padding: 6px 12px;
   font-size: 12px;
@@ -98,6 +124,26 @@ input[type="text"]#hotkey.recording {
   min-height: 14px;
 }
 
+.field-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  min-height: 14px;
+}
+
+.field-hint.error { color: #ff8080; }
+
+#hotkeyInactiveWarning.hidden { display: none; }
+
+.danger-btn {
+  background: transparent;
+  border: 1px solid #e0524d;
+  color: #e0524d;
+  align-self: flex-start;
+}
+
+.danger-btn:hover { background: rgba(224, 82, 77, 0.15); }
+.danger-btn:active { background: rgba(224, 82, 77, 0.25); }
+
 select {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -112,6 +158,16 @@ select {
 
 select:hover { background: rgba(255, 255, 255, 0.09); }
 select:focus { border-color: #4f8cff; background: rgba(255, 255, 255, 0.09); }
+select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* popupPin is programmatically disabled when Position is "Bottom-right
+   corner" (settings.ts), but its wrapping label/hint stayed full-opacity --
+   same "disabled control looks half-active" gap already fixed for
+   .checkbox-field below, just for this select's .field wrapper instead. */
+.field:has(select:disabled) label,
+.field:has(select:disabled) .field-hint {
+  opacity: 0.5;
+}
 
 input[type="range"] {
   width: 100%;
@@ -128,6 +184,22 @@ input[type="color"] {
   cursor: pointer;
 }
 
+.control-row { display: flex; align-items: center; gap: 8px; }
+.control-row input[type="range"] { flex: 1; }
+
+.reset-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 10px;
+  flex-shrink: 0;
+}
+
+.reset-btn:hover { background: rgba(255, 255, 255, 0.08); color: #eee; }
+.reset-btn:active { background: rgba(255, 255, 255, 0.12); }
+
 .checkbox-field {
   display: flex;
   align-items: center;
@@ -142,6 +214,19 @@ input[type="checkbox"] {
   width: 15px;
   height: 15px;
   cursor: pointer;
+}
+
+/* clearClipboardOnQuitEl is programmatically disabled when "Clear history on
+   quit" is unchecked (settings.ts), but the label wrapping it kept full
+   opacity and a pointer cursor -- same "disabled control looks clickable"
+   gap fixed for buttons above, just for a dependent checkbox instead. */
+.checkbox-field:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-field:has(input:disabled) input {
+  cursor: not-allowed;
 }
 
 .actions {
@@ -165,6 +250,30 @@ button {
 
 button:hover { background: #6b9fff; }
 button:active { background: #3d75e0; }
+button:focus-visible,
+.tab:focus-visible {
+  outline: 2px solid #4f8cff;
+  outline-offset: 2px;
+}
+
+/* Buttons only ever signaled a busy/disabled state via text ("Saving…",
+   "Clearing…", "Checking…", "Updating…") -- visually they stayed identical
+   to enabled, still showing the hover/active background and pointer cursor,
+   so nothing distinguished an inert button from a clickable one. */
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button:disabled:hover,
+button:disabled:active {
+  background: #4f8cff;
+}
+
+.danger-btn:disabled:hover,
+.danger-btn:disabled:active {
+  background: transparent;
+}
 
 #status {
   font-size: 12px;
@@ -176,11 +285,16 @@ button:active { background: #3d75e0; }
 
 #status.visible { opacity: 1; transform: translateY(0); }
 
+.unsaved-indicator {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.unsaved-indicator.visible { opacity: 1; }
+
 .update-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   background: rgba(79, 140, 255, 0.12);
   border: 1px solid rgba(79, 140, 255, 0.35);
   border-radius: 6px;
@@ -192,9 +306,33 @@ button:active { background: #3d75e0; }
 
 .update-banner.hidden { display: none; }
 
+.update-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .update-banner button {
   padding: 4px 10px;
   font-size: 12px;
+}
+
+.update-notes {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(79, 140, 255, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.update-notes.hidden { display: none; }
+
+.update-notes:focus-visible {
+  outline: 2px solid #4f8cff;
+  outline-offset: 2px;
 }
 
 .update-banner.error {

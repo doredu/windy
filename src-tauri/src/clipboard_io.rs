@@ -47,7 +47,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn capture_current_clipboard() -> Option<NewItem> {
+pub fn capture_current_clipboard(image_capture_enabled: bool) -> Option<NewItem> {
     if is_excluded_from_history() {
         return None;
     }
@@ -62,53 +62,73 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
     // itself. Plain file copies (e.g. from File Explorer) don't place image
     // data on the clipboard, so this reordering doesn't affect that case.
     if let Ok(image) = retry(|| clipboard.get_image()) {
-        let (w, h) = (image.width as u32, image.height as u32);
-        let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
-        let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
-        let img_buf = image::RgbaImage::from_raw(w, h, image.bytes.into_owned())?;
-        let resized = image::imageops::resize(&img_buf, out_w.max(1), out_h.max(1), image::imageops::FilterType::Triangle);
+        // When "Image" capture is disabled, skip the image-specific
+        // handling below (so we don't touch the filesystem writing PNG +
+        // thumbnail files unconditionally, which would leave orphan files
+        // on disk with no store row to ever reference or prune them) but
+        // still fall through to the CF_HDROP/CF_HTML/CF_UNICODETEXT checks
+        // below -- some apps (e.g. Excel/Word, browsers' image context
+        // menus) place image bytes alongside real text/file data on the
+        // same clipboard snapshot, and that data should still be captured
+        // if its own capture type is enabled.
+        if image_capture_enabled {
+            let (w, h) = (image.width as u32, image.height as u32);
+            let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
+            let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
+            let img_buf = image::RgbaImage::from_raw(w, h, image.bytes.into_owned())?;
+            let resized = image::imageops::resize(&img_buf, out_w.max(1), out_h.max(1), image::imageops::FilterType::Triangle);
 
-        // Dedup/filename are derived from an actual hash of the resized
-        // pixel content, not a randomly generated UUID -- so the same
-        // image copied twice (including writing an item back to the OS
-        // clipboard on selection, which re-triggers capture) hashes to the
-        // same key and reuses the same file instead of growing without
-        // bound. Content-addressing the filename also means a duplicate
-        // never gets written to disk twice: the `path.exists()` check
-        // below skips the write entirely.
-        let hash = sha256_hex(resized.as_raw());
-        let dir = crate::win32::images_dir();
-        std::fs::create_dir_all(&dir).ok()?;
-        let path = dir.join(format!("{hash}.png"));
-        if !path.exists() {
-            resized.save(&path).ok()?;
+            // Dedup/filename are derived from an actual hash of the resized
+            // pixel content, not a randomly generated UUID -- so the same
+            // image copied twice (including writing an item back to the OS
+            // clipboard on selection, which re-triggers capture) hashes to the
+            // same key and reuses the same file instead of growing without
+            // bound. Content-addressing the filename also means a duplicate
+            // never gets written to disk twice: the `path.exists()` check
+            // below skips the write entirely.
+            let hash = sha256_hex(resized.as_raw());
+            let dir = crate::win32::images_dir();
+            std::fs::create_dir_all(&dir).ok()?;
+            let path = dir.join(format!("{hash}.png"));
+            if !path.exists() {
+                resized.save(&path).ok()?;
+            }
+
+            let thumb_scale = (THUMBNAIL_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
+            let (thumb_w, thumb_h) = ((w as f32 * thumb_scale) as u32, (h as f32 * thumb_scale) as u32);
+            let thumbnail = image::imageops::resize(&img_buf, thumb_w.max(1), thumb_h.max(1), image::imageops::FilterType::Triangle);
+            let thumb_path = dir.join(format!("{hash}_thumb.png"));
+            if !thumb_path.exists() {
+                thumbnail.save(&thumb_path).ok()?;
+            }
+
+            return Some(NewItem {
+                kind: "image".into(),
+                content: None,
+                content_alt: None,
+                image_path: Some(path.to_string_lossy().to_string()),
+                thumb_path: Some(thumb_path.to_string_lossy().to_string()),
+                preview: format!("Image ({out_w}x{out_h})"),
+                dedup_source: format!("image:{hash}"),
+            });
         }
-
-        let thumb_scale = (THUMBNAIL_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
-        let (thumb_w, thumb_h) = ((w as f32 * thumb_scale) as u32, (h as f32 * thumb_scale) as u32);
-        let thumbnail = image::imageops::resize(&img_buf, thumb_w.max(1), thumb_h.max(1), image::imageops::FilterType::Triangle);
-        let thumb_path = dir.join(format!("{hash}_thumb.png"));
-        if !thumb_path.exists() {
-            thumbnail.save(&thumb_path).ok()?;
-        }
-
-        return Some(NewItem {
-            kind: "image".into(),
-            content: None,
-            content_alt: None,
-            image_path: Some(path.to_string_lossy().to_string()),
-            thumb_path: Some(thumb_path.to_string_lossy().to_string()),
-            preview: format!("Image ({out_w}x{out_h})"),
-            dedup_source: format!("image:{hash}"),
-        });
     }
 
     if let Some(paths) = crate::win32::read_hdrop() {
         let joined = paths.join("\n");
+        fn file_name_of(p: &str) -> &str {
+            std::path::Path::new(p)
+                .file_name()
+                .map(|n| n.to_str().unwrap_or(p))
+                .unwrap_or(p)
+        }
         let preview = if paths.len() == 1 {
-            paths[0].clone()
+            file_name_of(&paths[0]).to_string()
         } else {
-            format!("{} files", paths.len())
+            let names: Vec<&str> = paths.iter().map(|p| file_name_of(p)).collect();
+            let joined_names = names.join(", ");
+            let truncated_names = truncate_to_byte_cap(&joined_names, 200);
+            format!("{} files: {}", paths.len(), truncated_names)
         };
         let content = serde_json::to_string(&paths).ok()?;
         return Some(NewItem {
@@ -199,6 +219,9 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         }
         "image" => {
             let path = item.image_path.clone().ok_or("missing image_path")?;
+            if !std::path::Path::new(&path).exists() {
+                return Err("Image file no longer exists".to_string());
+            }
             let img = image::open(&path).map_err(|e| e.to_string())?.to_rgba8();
             let (w, h) = img.dimensions();
             let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
@@ -208,6 +231,24 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         }
         "files" => {
             let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).map_err(|e| e.to_string())?;
+            let missing: Vec<String> = paths
+                .iter()
+                .filter(|p| !std::path::Path::new(p).exists())
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.clone())
+                })
+                .collect();
+            if !missing.is_empty() {
+                return Err(format!(
+                    "{} of {} file(s) no longer exist: {}",
+                    missing.len(),
+                    paths.len(),
+                    missing.join(", ")
+                ));
+            }
             crate::win32::write_hdrop(&paths)
         }
         "richtext" => {
@@ -239,7 +280,7 @@ mod tests {
             copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         assert_eq!(captured.kind, "text");
         assert_eq!(captured.content.as_deref(), Some("clipboard round trip"));
     }
@@ -258,7 +299,7 @@ mod tests {
             first_copied_at: 0,
             copy_count: 1,
         }).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         assert!(captured.content.unwrap().len() <= 200_000);
     }
 
@@ -269,7 +310,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.clone().into_raw().into() })
             .unwrap();
-        let first = capture_current_clipboard().expect("expected first image capture");
+        let first = capture_current_clipboard(true).expect("expected first image capture");
         assert_eq!(first.kind, "image");
 
         // Simulate copying the exact same image content again (e.g. what
@@ -278,7 +319,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.into_raw().into() })
             .unwrap();
-        let second = capture_current_clipboard().expect("expected second image capture");
+        let second = capture_current_clipboard(true).expect("expected second image capture");
 
         assert_eq!(
             first.dedup_source, second.dedup_source,
@@ -296,9 +337,9 @@ mod tests {
         let b = image::RgbaImage::from_pixel(4, 4, image::Rgba([9, 9, 9, 255]));
         let mut clipboard = arboard::Clipboard::new().unwrap();
         clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: a.into_raw().into() }).unwrap();
-        let first = capture_current_clipboard().expect("expected first image capture");
+        let first = capture_current_clipboard(true).expect("expected first image capture");
         clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: b.into_raw().into() }).unwrap();
-        let second = capture_current_clipboard().expect("expected second image capture");
+        let second = capture_current_clipboard(true).expect("expected second image capture");
         assert_ne!(first.dedup_source, second.dedup_source);
         assert_ne!(first.image_path, second.image_path);
     }
@@ -321,7 +362,7 @@ mod tests {
             first_copied_at: 0,
             copy_count: 1,
         }).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         let content = captured.content.unwrap();
         assert!(content.len() <= 200_000, "byte length {} exceeds cap", content.len());
         assert!(std::str::from_utf8(content.as_bytes()).is_ok(), "truncation must not split a char");
@@ -334,7 +375,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 200, height: 100, bytes: pixels.into_raw().into() })
             .unwrap();
-        let captured = capture_current_clipboard().expect("expected an image capture");
+        let captured = capture_current_clipboard(true).expect("expected an image capture");
         assert_eq!(captured.kind, "image");
         let thumb_path = captured.thumb_path.expect("image capture must produce a thumb_path");
         let thumb_meta = std::fs::metadata(&thumb_path).expect("thumbnail file must exist on disk");
@@ -354,7 +395,7 @@ mod tests {
     fn html_on_clipboard_is_captured_as_richtext_with_plain_text_alt() {
         let mut clipboard = arboard::Clipboard::new().unwrap();
         clipboard.set().html("<b>hello</b>", Some("hello")).unwrap();
-        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        let captured = capture_current_clipboard(true).expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
         // The captured content is the *entire* raw CF_HTML payload (header
         // plus wrapped body), not just the inner Fragment -- so a <style>
@@ -386,10 +427,36 @@ mod tests {
             copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
-        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        let captured = capture_current_clipboard(true).expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
         // Verbatim round trip -- including the <style> block that a naive
         // Fragment-only capture would have dropped.
         assert_eq!(captured.content.as_deref(), Some(html));
+    }
+
+    #[test]
+    fn selecting_a_files_item_with_missing_paths_errors_instead_of_silently_succeeding() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(
+                serde_json::to_string(&vec![
+                    "C:\\definitely\\does\\not\\exist\\gone.txt".to_string(),
+                    "C:\\also\\missing\\vanished.txt".to_string(),
+                ])
+                .unwrap(),
+            ),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "gone.txt, vanished.txt".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let err = write_item_to_clipboard(&item).expect_err("expected an error for missing files");
+        assert!(err.contains("2 of 2"), "error was: {err}");
+        assert!(err.contains("gone.txt"), "error was: {err}");
+        assert!(err.contains("vanished.txt"), "error was: {err}");
     }
 }

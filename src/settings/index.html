@@ -3,17 +3,20 @@
 <script type="module" src="../dist/settings/settings.js"></script></head>
 <body>
   <div id="updateBanner" class="update-banner hidden">
-    <span id="updateText"></span>
-    <button type="button" id="updateAction"></button>
+    <div class="update-banner-row">
+      <span id="updateText" role="status"></span>
+      <button type="button" id="updateAction"></button>
+    </div>
+    <p id="updateNotes" class="update-notes hidden" tabindex="0" role="region" aria-label="Release notes"></p>
   </div>
   <div class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="general" role="tab">General</button>
-    <button type="button" class="tab" data-tab="storage" role="tab">Storage</button>
-    <button type="button" class="tab" data-tab="appearance" role="tab">Appearance</button>
-    <button type="button" class="tab" data-tab="advanced" role="tab">Advanced</button>
+    <button type="button" id="tab-general" class="tab active" data-tab="general" role="tab" aria-selected="true" aria-controls="panel-general" tabindex="0">General</button>
+    <button type="button" id="tab-storage" class="tab" data-tab="storage" role="tab" aria-selected="false" aria-controls="panel-storage" tabindex="-1">Storage</button>
+    <button type="button" id="tab-appearance" class="tab" data-tab="appearance" role="tab" aria-selected="false" aria-controls="panel-appearance" tabindex="-1">Appearance</button>
+    <button type="button" id="tab-advanced" class="tab" data-tab="advanced" role="tab" aria-selected="false" aria-controls="panel-advanced" tabindex="-1">Advanced</button>
   </div>
   <form id="form">
-    <section class="tab-panel active" data-panel="general">
+    <section id="panel-general" class="tab-panel active" data-panel="general" role="tabpanel" aria-labelledby="tab-general">
       <label class="checkbox-field">
         <input id="startWithWindows" type="checkbox">
         Start with Windows
@@ -22,9 +25,12 @@
         <label for="hotkey">Toggle hotkey</label>
         <div class="hotkey-row">
           <input id="hotkey" type="text" readonly placeholder="Click Record and press keys">
-          <button type="button" id="hotkeyRecord">Record</button>
+          <button type="button" id="hotkeyRecord" aria-pressed="false">Record</button>
+          <button type="button" id="hotkeyReset" class="reset-btn" title="Reset to default (Ctrl+Alt+V)" aria-label="Reset toggle hotkey to default (Ctrl+Alt+V)">Reset</button>
         </div>
-        <span id="hotkeyError" class="field-error"></span>
+        <span id="hotkeyError" class="field-error" role="alert"></span>
+        <span id="hotkeyInactiveWarning" class="field-hint error hidden" role="alert">This hotkey isn't working right now — another app may already be using it. Try recording a different one.</span>
+        <span class="field-hint">Click Record, then press a modifier (Ctrl/Alt/Shift) plus a letter, digit, or Space</span>
       </div>
       <label class="checkbox-field">
         <input id="autoCheckUpdates" type="checkbox">
@@ -32,15 +38,22 @@
       </label>
     </section>
 
-    <section class="tab-panel" data-panel="storage">
+    <section id="panel-storage" class="tab-panel" data-panel="storage" role="tabpanel" aria-labelledby="tab-storage">
       <div class="field">
         <label for="maxItems">Max items</label>
-        <input id="maxItems" type="number" min="1">
+        <div class="control-row">
+          <input id="maxItems" type="number" min="1" placeholder="Unlimited">
+          <button type="button" id="resetMaxItems" class="reset-btn" title="Reset to default (200)" aria-label="Reset max items to default (200)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="retentionDays">Retention (days)</label>
-        <input id="retentionDays" type="number" min="1">
+        <div class="control-row">
+          <input id="retentionDays" type="number" min="1" placeholder="Unlimited">
+          <button type="button" id="resetRetentionDays" class="reset-btn" title="Reset to default (30)" aria-label="Reset retention days to default (30)">Reset</button>
+        </div>
       </div>
+      <span id="storageError" class="field-error" role="alert"></span>
       <div class="field">
         <label for="sortMode">Sort by</label>
         <select id="sortMode">
@@ -48,28 +61,44 @@
           <option value="first_copied">Time of first copy</option>
           <option value="most_copied">Number of copies</option>
         </select>
+        <span class="field-hint">Controls the order of items in the history popup. "Time of last copy" moves an item to the top each time you re-copy it; "Time of first copy" keeps its position fixed</span>
       </div>
-      <div class="field">
-        <label>Save to history</label>
+      <fieldset class="field">
+        <legend>Save to history</legend>
         <label class="checkbox-field"><input id="captureText" type="checkbox"> Text</label>
         <label class="checkbox-field"><input id="captureImage" type="checkbox"> Images</label>
         <label class="checkbox-field"><input id="captureFiles" type="checkbox"> Files</label>
         <label class="checkbox-field"><input id="captureRichtext" type="checkbox"> Rich text</label>
-      </div>
+        <span id="captureError" class="field-error" role="alert"></span>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Danger zone</legend>
+        <button type="button" id="clearHistoryBtn" class="danger-btn">Clear all history</button>
+        <span id="clearHistoryStatus" class="field-hint" role="status"></span>
+      </fieldset>
     </section>
 
-    <section class="tab-panel" data-panel="appearance">
+    <section id="panel-appearance" class="tab-panel" data-panel="appearance" role="tabpanel" aria-labelledby="tab-appearance">
       <div class="field">
-        <label for="popupOpacity">Popup opacity</label>
-        <input id="popupOpacity" type="range" min="30" max="100" step="1">
+        <label for="popupOpacity">Popup opacity <span id="popupOpacityValue"></span></label>
+        <div class="control-row">
+          <input id="popupOpacity" type="range" min="30" max="100" step="1">
+          <button type="button" id="resetOpacity" class="reset-btn" title="Reset to default (90%)" aria-label="Reset popup opacity to default (90%)">Reset</button>
+        </div>
       </div>
       <div class="field">
-        <label for="popupBgColor">Popup background color</label>
-        <input id="popupBgColor" type="color">
+        <label for="popupBgColor">Popup background color <span id="popupBgColorValue" class="hex-value"></span></label>
+        <div class="control-row">
+          <input id="popupBgColor" type="color">
+          <button type="button" id="resetBgColor" class="reset-btn" title="Reset to default (#1E1E22)" aria-label="Reset popup background color to default (#1E1E22)">Reset</button>
+        </div>
       </div>
       <div class="field">
-        <label for="popupAccentColor">Popup accent color</label>
-        <input id="popupAccentColor" type="color">
+        <label for="popupAccentColor">Popup accent color <span id="popupAccentColorValue" class="hex-value"></span></label>
+        <div class="control-row">
+          <input id="popupAccentColor" type="color">
+          <button type="button" id="resetAccentColor" class="reset-btn" title="Reset to default (#FFFFFF)" aria-label="Reset popup accent color to default (#FFFFFF)">Reset</button>
+        </div>
       </div>
       <div class="field">
         <label for="popupPosition">Position</label>
@@ -79,6 +108,7 @@
           <option value="screen_center">Center of screen</option>
           <option value="bottom_right">Bottom-right corner</option>
         </select>
+        <span class="field-hint">"Center of active window" falls back to the screen center if no window is focused</span>
       </div>
       <div class="field">
         <label for="popupPin">Pin</label>
@@ -86,10 +116,11 @@
           <option value="bottom">Below position</option>
           <option value="top">Above position</option>
         </select>
+        <span id="popupPinHint" class="field-hint">Whether the popup opens below or above the chosen Position point</span>
       </div>
     </section>
 
-    <section class="tab-panel" data-panel="advanced">
+    <section id="panel-advanced" class="tab-panel" data-panel="advanced" role="tabpanel" aria-labelledby="tab-advanced">
       <label class="checkbox-field">
         <input id="clearHistoryOnQuit" type="checkbox">
         Clear history on quit
@@ -98,11 +129,13 @@
         <input id="clearClipboardOnQuit" type="checkbox">
         Clear system clipboard too
       </label>
+      <span class="field-hint">Only applies when "Clear history on quit" is enabled above</span>
     </section>
 
     <div class="actions">
-      <button type="submit">Save</button>
-      <span id="status">Saved</span>
+      <button type="submit" id="saveBtn">Save</button>
+      <span id="status" role="status">Saved</span>
+      <span id="unsavedIndicator" class="unsaved-indicator" role="status">Unsaved changes</span>
     </div>
   </form>
 </body></html>
