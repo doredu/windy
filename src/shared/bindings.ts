@@ -14,6 +14,7 @@ export interface HistoryItemDto {
   created_at: number;
   first_copied_at: number;
   copy_count: number;
+  search_text: string | null;
 }
 
 export type SortMode = "last_copied" | "first_copied" | "most_copied";

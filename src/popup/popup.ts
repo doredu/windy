@@ -123,7 +123,11 @@ function applyFilter(resetSelection = true) {
   // reusing a stale numeric index that now points at a different row.
   const selectedId = !resetSelection ? filtered[selectedIndex]?.id : undefined;
   const query = searchEl.value.trim().toLowerCase();
-  filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
+  filtered = query
+    ? items.filter(
+        (item) => item.preview.toLowerCase().includes(query) || (item.search_text?.includes(query) ?? false),
+      )
+    : items;
   if (resetSelection) {
     selectedIndex = 0;
   } else if (selectedId !== undefined) {

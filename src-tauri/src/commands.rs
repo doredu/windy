@@ -25,6 +25,11 @@ pub struct HistoryItemDto {
     pub created_at: i64,
     pub first_copied_at: i64,
     pub copy_count: i64,
+    // Full (untruncated) lowercased text content for text/richtext items,
+    // used by the popup's search box so it can match beyond the 120-char
+    // `preview` snippet. `None` for kinds where `preview` already covers
+    // everything searchable (files, images).
+    pub search_text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -281,6 +286,11 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
     });
     let size = item_size(&item);
     let copy_count = item.copy_count;
+    let search_text = match item.kind.as_str() {
+        "text" => item.content.as_deref().map(|s| s.to_lowercase()),
+        "richtext" => item.content_alt.as_deref().map(|s| s.to_lowercase()),
+        _ => None,
+    };
     HistoryItemDto {
         id: item.id,
         kind: item.kind,
@@ -290,6 +300,7 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
         created_at: item.created_at,
         first_copied_at: item.first_copied_at,
         copy_count,
+        search_text,
     }
 }
 
