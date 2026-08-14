@@ -42,7 +42,10 @@ form { display: flex; flex-direction: column; gap: 14px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 
-label { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+fieldset.field { border: none; margin: 0; padding: 0; }
+
+label, legend { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+legend { padding: 0; }
 
 #popupOpacityValue, .hex-value { color: rgba(255, 255, 255, 0.4); font-variant-numeric: tabular-nums; }
 .hex-value { font-family: monospace; text-transform: uppercase; }
