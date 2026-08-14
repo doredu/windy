@@ -13,7 +13,7 @@ import {
   type HistoryItemDto,
 } from "../shared/bindings.ts";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-import { hexToRgba } from "../shared/color.ts";
+import { hexToRgba, isLightColor } from "../shared/color.ts";
 
 const FOLDER_ICON_SVG =
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M1.5 3A1.5 1.5 0 0 1 3 1.5h3.172a1.5 1.5 0 0 1 1.06.44l1.329 1.328A.5.5 0 0 0 8.914 3H13A1.5 1.5 0 0 1 14.5 4.5v8A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Z"/></svg>`;
@@ -205,6 +205,13 @@ async function applyTheme() {
   // (`rgba(255,255,255,0.08)`) when the accent color is left at its default.
   root.setProperty("--popup-accent-bg", hexToRgba(settings.popup_accent_color, 0.08));
   root.setProperty("--popup-accent-color", settings.popup_accent_color);
+  // Text/icon colors default to a light palette suited to the default dark
+  // background -- flip to a dark palette when the user picks a light
+  // background so text stays readable instead of light-on-light.
+  document.documentElement.classList.toggle(
+    "light-bg",
+    isLightColor(settings.popup_bg_color),
+  );
 }
 
 // Registered once at module load — not per-render — so we never accumulate
