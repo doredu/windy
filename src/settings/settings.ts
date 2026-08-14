@@ -303,9 +303,19 @@ form.addEventListener("submit", async (e) => {
   // validation runs, so the inputs' `min="1"` attribute never actually
   // blocks a save -- a user can type 0 or a negative number here, which
   // would make the next prune wipe out the whole history silently.
+  if (maxItemsEl.value && !Number.isInteger(Number(maxItemsEl.value))) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = "Max items must be blank (unlimited) or a whole number";
+    return;
+  }
   if (maxItemsEl.value && Number(maxItemsEl.value) < 1) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Max items must be blank (unlimited) or at least 1";
+    return;
+  }
+  if (retentionEl.value && !Number.isInteger(Number(retentionEl.value))) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or a whole number";
     return;
   }
   if (retentionEl.value && Number(retentionEl.value) < 1) {
