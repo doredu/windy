@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 /// A pending rebind request handed to the hotkey thread: the new combo
 /// string plus a oneshot channel the thread uses to report success/failure
@@ -132,49 +132,31 @@ pub fn spawn(app_handle: AppHandle, store: Arc<Mutex<HistoryStore>>, initial_hot
     HotkeyHandle { thread_id, pending, active }
 }
 
-/// tauri.conf.json's declared popup size, in *logical* pixels -- used only
-/// as a last-resort fallback below if the popup window can't be looked up
-/// (should not happen in practice, since the window is always declared).
+/// tauri.conf.json's declared popup size, in *logical* pixels -- scaled by
+/// the *target* monitor's DPI (see `monitor_dpi_scale`) to get the physical
+/// size the popup will actually render at once Windows finishes moving it.
 const POPUP_LOGICAL_SIZE: (f64, f64) = (320.0, 340.0);
 
-/// Returns the popup window's actual size in *physical* pixels, matching
-/// the unit `GetCursorPos`/`clamp_popup_position` operate in. Uses the live
-/// window's `outer_size()` (already physical) rather than a hardcoded
-/// tuple, since a hardcoded logical-pixel guess can under-clamp on displays
-/// scaled above 100%.
-fn popup_physical_size(app_handle: &AppHandle) -> (i32, i32) {
-    if let Some(window) = app_handle.get_webview_window("popup") {
-        if let Ok(size) = window.outer_size() {
-            return (size.width as i32, size.height as i32);
-        }
-        if let Ok(scale) = window.scale_factor() {
-            return (
-                (POPUP_LOGICAL_SIZE.0 * scale) as i32,
-                (POPUP_LOGICAL_SIZE.1 * scale) as i32,
-            );
-        }
-    }
-    // Last resort: assume 100% scaling.
-    (POPUP_LOGICAL_SIZE.0 as i32, POPUP_LOGICAL_SIZE.1 as i32)
+/// Returns the handle of whichever monitor contains `cursor`, via
+/// `MonitorFromPoint` with `MONITOR_DEFAULTTONEAREST` (always returns a
+/// valid handle, even for off-screen points).
+fn monitor_at(cursor: (i32, i32)) -> windows::Win32::Graphics::Gdi::HMONITOR {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
+
+    unsafe { MonitorFromPoint(POINT { x: cursor.0, y: cursor.1 }, MONITOR_DEFAULTTONEAREST) }
 }
 
 /// Returns the work-area bounds (i.e. excluding the taskbar), in
-/// virtual-screen coordinates, of whichever monitor contains `cursor`.
+/// virtual-screen coordinates, of `monitor`.
 ///
 /// Falls back to a (0, 0, 0, 0) bounds box (which `clamp_popup_position`
 /// will clamp the popup's origin into) if `GetMonitorInfoW` fails -- this
-/// should never happen in practice since `MonitorFromPoint` with
-/// `MONITOR_DEFAULTTONEAREST` always returns a valid monitor handle.
-fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    };
+/// should never happen in practice given a handle from `MonitorFromPoint`.
+fn monitor_bounds(monitor: windows::Win32::Graphics::Gdi::HMONITOR) -> (i32, i32, i32, i32) {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
 
     unsafe {
-        let point = POINT { x: cursor.0, y: cursor.1 };
-        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
-
         let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
         if !GetMonitorInfoW(monitor, &mut info).as_bool() {
             eprintln!("watcher: GetMonitorInfoW failed; popup positioning may be wrong");
@@ -186,6 +168,21 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
     }
 }
 
+/// Returns `monitor`'s DPI scale factor (1.0 == 96 DPI == 100%), falling
+/// back to 1.0 if `GetDpiForMonitor` fails.
+fn monitor_dpi_scale(monitor: windows::Win32::Graphics::Gdi::HMONITOR) -> f64 {
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    let mut dpi_x: u32 = 96;
+    let mut dpi_y: u32 = 96;
+    unsafe {
+        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_err() {
+            return 1.0;
+        }
+    }
+    dpi_x as f64 / 96.0
+}
+
 /// Computes the popup's cursor-relative position (respecting the user's
 /// `popup_position`/`popup_pin` settings) and emits `"toggle-popup"` with it,
 /// exactly as the global hotkey does. Also used by the tray icon/menu's
@@ -194,8 +191,18 @@ fn monitor_bounds_at(cursor: (i32, i32)) -> (i32, i32, i32, i32) {
 /// shown/hidden.
 pub fn emit_toggle_popup(app_handle: &AppHandle, store: &Arc<Mutex<HistoryStore>>) {
     let cursor = crate::win32::cursor_position();
-    let popup_size = popup_physical_size(app_handle);
-    let screen = monitor_bounds_at(cursor);
+    // Resolve the *target* monitor once and derive both the screen bounds
+    // and the popup's expected physical size from it. Using the popup
+    // window's own (pre-move) `outer_size()` here would reflect whatever
+    // monitor/DPI it currently happens to be sitting on -- wrong when
+    // toggling it open onto a *different* monitor with a different DPI
+    // scale factor (e.g. a 100%-scaled laptop panel + a 250%-scaled
+    // external display), which could clamp the position against the wrong
+    // physical size and leave the popup rendered partially off-screen.
+    let monitor = monitor_at(cursor);
+    let screen = monitor_bounds(monitor);
+    let scale = monitor_dpi_scale(monitor);
+    let popup_size = ((POPUP_LOGICAL_SIZE.0 * scale) as i32, (POPUP_LOGICAL_SIZE.1 * scale) as i32);
     let (mode, pin) = {
         let s = store.lock().unwrap_or_else(PoisonError::into_inner);
         (
