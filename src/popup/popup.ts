@@ -194,6 +194,18 @@ document.addEventListener("keydown", async (e) => {
     await getCurrentWindow().hide();
     return;
   }
+  // Delete key removes the selected row, mirroring the per-row × button, so
+  // keyboard-only users aren't forced to reach for the mouse to clean up
+  // history. Guarded on search focus so it doesn't hijack forward-delete
+  // while editing the query.
+  if (e.key === "Delete") {
+    if (document.activeElement === searchEl) return;
+    if (!filtered[selectedIndex]) return;
+    e.preventDefault();
+    await deleteItem(filtered[selectedIndex].id);
+    await refresh();
+    return;
+  }
   // Digit shortcuts only select a row when the search box isn't focused --
   // otherwise typing "1" while searching would select an item instead of
   // filtering.
