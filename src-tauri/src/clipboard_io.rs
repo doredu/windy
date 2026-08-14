@@ -47,7 +47,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn capture_current_clipboard() -> Option<NewItem> {
+pub fn capture_current_clipboard(image_capture_enabled: bool) -> Option<NewItem> {
     if is_excluded_from_history() {
         return None;
     }
@@ -62,6 +62,13 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
     // itself. Plain file copies (e.g. from File Explorer) don't place image
     // data on the clipboard, so this reordering doesn't affect that case.
     if let Ok(image) = retry(|| clipboard.get_image()) {
+        // Bail out before touching the filesystem when the user has
+        // disabled "Image" capture -- resizing/writing the PNG + thumbnail
+        // below happens unconditionally otherwise, silently leaving orphan
+        // files on disk with no store row to ever reference or prune them.
+        if !image_capture_enabled {
+            return None;
+        }
         let (w, h) = (image.width as u32, image.height as u32);
         let scale = (IMAGE_MAX_DIMENSION as f32 / w.max(h) as f32).min(1.0);
         let (out_w, out_h) = ((w as f32 * scale) as u32, (h as f32 * scale) as u32);
@@ -248,7 +255,7 @@ mod tests {
             copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         assert_eq!(captured.kind, "text");
         assert_eq!(captured.content.as_deref(), Some("clipboard round trip"));
     }
@@ -267,7 +274,7 @@ mod tests {
             first_copied_at: 0,
             copy_count: 1,
         }).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         assert!(captured.content.unwrap().len() <= 200_000);
     }
 
@@ -278,7 +285,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.clone().into_raw().into() })
             .unwrap();
-        let first = capture_current_clipboard().expect("expected first image capture");
+        let first = capture_current_clipboard(true).expect("expected first image capture");
         assert_eq!(first.kind, "image");
 
         // Simulate copying the exact same image content again (e.g. what
@@ -287,7 +294,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 4, height: 4, bytes: pixels.into_raw().into() })
             .unwrap();
-        let second = capture_current_clipboard().expect("expected second image capture");
+        let second = capture_current_clipboard(true).expect("expected second image capture");
 
         assert_eq!(
             first.dedup_source, second.dedup_source,
@@ -305,9 +312,9 @@ mod tests {
         let b = image::RgbaImage::from_pixel(4, 4, image::Rgba([9, 9, 9, 255]));
         let mut clipboard = arboard::Clipboard::new().unwrap();
         clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: a.into_raw().into() }).unwrap();
-        let first = capture_current_clipboard().expect("expected first image capture");
+        let first = capture_current_clipboard(true).expect("expected first image capture");
         clipboard.set_image(arboard::ImageData { width: 4, height: 4, bytes: b.into_raw().into() }).unwrap();
-        let second = capture_current_clipboard().expect("expected second image capture");
+        let second = capture_current_clipboard(true).expect("expected second image capture");
         assert_ne!(first.dedup_source, second.dedup_source);
         assert_ne!(first.image_path, second.image_path);
     }
@@ -330,7 +337,7 @@ mod tests {
             first_copied_at: 0,
             copy_count: 1,
         }).unwrap();
-        let captured = capture_current_clipboard().expect("expected a captured item");
+        let captured = capture_current_clipboard(true).expect("expected a captured item");
         let content = captured.content.unwrap();
         assert!(content.len() <= 200_000, "byte length {} exceeds cap", content.len());
         assert!(std::str::from_utf8(content.as_bytes()).is_ok(), "truncation must not split a char");
@@ -343,7 +350,7 @@ mod tests {
         clipboard
             .set_image(arboard::ImageData { width: 200, height: 100, bytes: pixels.into_raw().into() })
             .unwrap();
-        let captured = capture_current_clipboard().expect("expected an image capture");
+        let captured = capture_current_clipboard(true).expect("expected an image capture");
         assert_eq!(captured.kind, "image");
         let thumb_path = captured.thumb_path.expect("image capture must produce a thumb_path");
         let thumb_meta = std::fs::metadata(&thumb_path).expect("thumbnail file must exist on disk");
@@ -363,7 +370,7 @@ mod tests {
     fn html_on_clipboard_is_captured_as_richtext_with_plain_text_alt() {
         let mut clipboard = arboard::Clipboard::new().unwrap();
         clipboard.set().html("<b>hello</b>", Some("hello")).unwrap();
-        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        let captured = capture_current_clipboard(true).expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
         // The captured content is the *entire* raw CF_HTML payload (header
         // plus wrapped body), not just the inner Fragment -- so a <style>
@@ -395,7 +402,7 @@ mod tests {
             copy_count: 1,
         };
         write_item_to_clipboard(&item).unwrap();
-        let captured = capture_current_clipboard().expect("expected a richtext capture");
+        let captured = capture_current_clipboard(true).expect("expected a richtext capture");
         assert_eq!(captured.kind, "richtext");
         // Verbatim round trip -- including the <style> block that a naive
         // Fragment-only capture would have dropped.

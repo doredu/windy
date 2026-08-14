@@ -437,7 +437,11 @@ unsafe extern "system" fn listener_wndproc(
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             LISTENER_CTX.with(|cell| {
                 if let Some((app_handle, store)) = cell.borrow().as_ref() {
-                    if let Some(item) = crate::clipboard_io::capture_current_clipboard() {
+                    let image_capture_enabled = {
+                        let store = store.lock().unwrap_or_else(PoisonError::into_inner);
+                        kind_is_captured(&store, "image")
+                    };
+                    if let Some(item) = crate::clipboard_io::capture_current_clipboard(image_capture_enabled) {
                         let store = store.lock().unwrap_or_else(PoisonError::into_inner);
                         if !kind_is_captured(&store, &item.kind) {
                             return;
