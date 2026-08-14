@@ -270,6 +270,8 @@ form.addEventListener("submit", async (e) => {
   setTimeout(() => status.classList.remove("visible"), 1500);
 });
 
+let clearHistoryStatusTimeout: number | undefined;
+
 clearHistoryBtn.addEventListener("click", async () => {
   if (!confirm("Delete all clipboard history? This can't be undone.")) return;
   clearHistoryBtn.disabled = true;
@@ -284,7 +286,10 @@ clearHistoryBtn.addEventListener("click", async () => {
   } finally {
     clearHistoryBtn.disabled = false;
     clearHistoryBtn.textContent = "Clear all history";
-    setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
+    // Guard against a stale timeout from an earlier click clearing this
+    // run's status message early if the button is clicked again within 2s.
+    clearTimeout(clearHistoryStatusTimeout);
+    clearHistoryStatusTimeout = setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
   }
 });
 
