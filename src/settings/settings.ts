@@ -386,13 +386,17 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey) parts.push("Win");
   parts.push(keyChar.toUpperCase());
 
-  hotkeyEl.value = parts.join("+");
+  const newHotkey = parts.join("+");
+  hotkeyEl.value = newHotkey;
   hotkeyErrorEl.textContent = "";
   stopRecording();
   // hotkeyEl.value is assigned programmatically above, which doesn't fire a
   // native `input` event, so the delegated dirty-tracking listener on the
-  // form wouldn't otherwise notice this change.
-  markDirty();
+  // form wouldn't otherwise notice this change. Only mark dirty if the
+  // recorded combo actually differs from what was previously saved --
+  // re-recording the same shortcut shouldn't trigger a spurious "Discard
+  // unsaved changes?" prompt.
+  if (newHotkey !== previousHotkey) markDirty();
 });
 
 // Shared by Escape and the native titlebar close button (main.rs emits
