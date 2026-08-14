@@ -219,6 +219,9 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         }
         "image" => {
             let path = item.image_path.clone().ok_or("missing image_path")?;
+            if !std::path::Path::new(&path).exists() {
+                return Err("Image file no longer exists".to_string());
+            }
             let img = image::open(&path).map_err(|e| e.to_string())?.to_rgba8();
             let (w, h) = img.dimensions();
             let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
