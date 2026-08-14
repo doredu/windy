@@ -196,6 +196,12 @@ form.addEventListener("submit", async (e) => {
   try {
     await setSettings(settings);
   } catch (err) {
+    // #hotkeyError only lives in the General panel, which is display:none
+    // when another tab is active -- without switching tabs, a save failure
+    // triggered from Storage/Appearance/Advanced would set the error text
+    // invisibly and the Save button would silently appear to do nothing.
+    const generalTab = document.getElementById("tab-general") as HTMLButtonElement;
+    activateTab(generalTab, false);
     hotkeyErrorEl.textContent = String(err);
     return;
   }
