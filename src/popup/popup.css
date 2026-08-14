@@ -43,9 +43,17 @@ html.light-bg #count { color: rgba(0,0,0,0.45); }
 html.light-bg .badge { color: var(--popup-accent-color, rgba(0,0,0,0.55)); }
 html.light-bg .size { color: rgba(0,0,0,0.5); }
 html.light-bg .delete { color: #1e1e22; }
-html.light-bg .delete:hover { color: #d13a3a; }
+html.light-bg .delete:hover { color: #d13a3a; background: rgba(0,0,0,0.08); }
 html.light-bg .empty { color: rgba(0,0,0,0.45); }
 html.light-bg #error { color: #c0342f; background: rgba(192,52,47,0.08); border-bottom-color: rgba(192,52,47,0.2); }
+/* #header/#search/#close/#clear-search all used hardcoded white overlays
+   (border, background, hover) tuned for the default dark background -- on a
+   light popup background these become nearly invisible, same class of gap
+   as the scrollbar-thumb and text-color light-bg fixes above. */
+html.light-bg #header { border-bottom-color: rgba(0,0,0,0.1); }
+html.light-bg #search { background: rgba(0,0,0,0.05); }
+html.light-bg #search:focus { background: rgba(0,0,0,0.08); }
+html.light-bg #close:hover, html.light-bg #clear-search:hover { background: rgba(0,0,0,0.08); }
 /* The doc thumbnail icon's inner lines punch out against its currentColor
    outer shape (see popup.ts DOC_ICON_SVG) -- flip them light when the shape
    itself turns dark in light-bg mode, or they'd vanish into the shape. */
