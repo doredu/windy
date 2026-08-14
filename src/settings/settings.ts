@@ -36,6 +36,7 @@ const clearClipboardOnQuitEl = document.getElementById("clearClipboardOnQuit") a
 const clearHistoryBtn = document.getElementById("clearHistoryBtn") as HTMLButtonElement;
 const clearHistoryStatusEl = document.getElementById("clearHistoryStatus")!;
 const form = document.getElementById("form") as HTMLFormElement;
+const saveBtn = document.getElementById("saveBtn") as HTMLButtonElement;
 const status = document.getElementById("status")!;
 const updateBannerEl = document.getElementById("updateBanner")!;
 const updateTextEl = document.getElementById("updateText")!;
@@ -240,6 +241,8 @@ form.addEventListener("submit", async (e) => {
     clear_history_on_quit: clearHistoryOnQuitEl.checked,
     clear_clipboard_on_quit: clearClipboardOnQuitEl.checked,
   };
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Saving…";
   try {
     await setSettings(settings);
   } catch (err) {
@@ -251,6 +254,9 @@ form.addEventListener("submit", async (e) => {
     activateTab(generalTab, false);
     hotkeyErrorEl.textContent = String(err);
     return;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
   }
   status.classList.add("visible");
   setTimeout(() => status.classList.remove("visible"), 1500);
