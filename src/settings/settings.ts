@@ -5,6 +5,7 @@ import {
   checkForUpdates,
   installUpdate,
   clearHistory,
+  getHistory,
   onWindowFocusChanged,
   onCloseRequested,
   type CaptureType,
@@ -388,7 +389,29 @@ form.addEventListener("submit", async (e) => {
 let clearHistoryStatusTimeout: number | undefined;
 
 clearHistoryBtn.addEventListener("click", async () => {
-  if (!confirm("Delete all clipboard history? This can't be undone.")) return;
+  // The confirm prompt previously gave no sense of scale ("all clipboard
+  // history" could mean 2 items or 2,000) -- showing the actual count makes
+  // this destructive action's impact concrete before the user commits to it.
+  let count: number | undefined;
+  try {
+    count = (await getHistory()).length;
+  } catch {
+    // If the count fetch fails, fall back to the generic wording below
+    // rather than blocking the clear action entirely.
+  }
+  const message = count === undefined
+    ? "Delete all clipboard history? This can't be undone."
+    : count === 0
+    ? "Clipboard history is already empty."
+    : `Delete all ${count} clipboard item${count === 1 ? "" : "s"}? This can't be undone.`;
+  if (count === 0) {
+    clearHistoryStatusEl.classList.remove("error");
+    clearHistoryStatusEl.textContent = message;
+    clearTimeout(clearHistoryStatusTimeout);
+    clearHistoryStatusTimeout = setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
+    return;
+  }
+  if (!confirm(message)) return;
   clearHistoryBtn.disabled = true;
   clearHistoryBtn.textContent = "Clearing…";
   try {
