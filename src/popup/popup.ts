@@ -391,7 +391,11 @@ window.addEventListener("blur", async () => {
 // Esc/click-outside); otherwise position it at the cursor and open it.
 onTogglePopup(async (pos) => {
   const win = getCurrentWindow();
-  if (await win.isVisible()) {
+  // On Windows, isVisible() reports true even while minimized (e.g. after
+  // Win+D "show desktop"), so without this check a minimized popup would
+  // take the hide() branch below and never reappear -- same platform quirk
+  // already fixed for the settings window's tray menu handler (main.rs).
+  if ((await win.isVisible()) && !(await win.isMinimized())) {
     await win.hide();
     return;
   }
@@ -401,6 +405,7 @@ onTogglePopup(async (pos) => {
   // `pos` is the already-clamped (screen-edge-aware) position computed in
   // Rust (position.rs, Task 4) — apply it directly, no re-clamping here.
   await win.setPosition(new PhysicalPosition(pos.x, pos.y));
+  await win.unminimize();
   await win.show();
   await win.setFocus();
   searchEl.focus();
