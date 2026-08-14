@@ -56,10 +56,10 @@ clearSearchEl.addEventListener("click", () => {
   searchEl.focus();
 });
 
-function applyFilter() {
+function applyFilter(resetSelection = true) {
   const query = searchEl.value.trim().toLowerCase();
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
-  selectedIndex = 0;
+  if (resetSelection) selectedIndex = 0;
   clearSearchEl.classList.toggle("visible", searchEl.value.length > 0);
   countEl.textContent = query
     ? `${filtered.length} of ${items.length}`
@@ -69,7 +69,7 @@ function applyFilter() {
   render();
 }
 
-searchEl.addEventListener("input", applyFilter);
+searchEl.addEventListener("input", () => applyFilter());
 
 function render() {
   listEl.innerHTML = "";
@@ -126,7 +126,7 @@ function render() {
       // `delete_item` doesn't emit `history-updated` (that event only fires
       // on new clipboard captures), so refresh locally to drop the row now
       // instead of waiting for the next backend event.
-      await refresh();
+      await refresh(false);
     };
     row.appendChild(del);
 
@@ -150,9 +150,13 @@ function render() {
   listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
 }
 
-async function refresh() {
+// `resetSelection` is false for post-delete refreshes so removing an item
+// in the middle of a long list keeps the selection near where it was,
+// instead of jumping back to the top every time (render() still clamps
+// selectedIndex to the new, shorter list's bounds).
+async function refresh(resetSelection = true) {
   items = await getHistory();
-  applyFilter();
+  applyFilter(resetSelection);
 }
 
 async function applyTheme() {
@@ -231,7 +235,7 @@ document.addEventListener("keydown", async (e) => {
     if (!filtered[selectedIndex]) return;
     e.preventDefault();
     await deleteItem(filtered[selectedIndex].id);
-    await refresh();
+    await refresh(false);
     return;
   }
   // Digit shortcuts only select a row when the search box isn't focused --
