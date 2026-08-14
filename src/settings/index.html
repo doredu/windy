@@ -7,10 +7,10 @@
     <button type="button" id="updateAction"></button>
   </div>
   <div class="tabs" role="tablist">
-    <button type="button" id="tab-general" class="tab active" data-tab="general" role="tab" aria-selected="true" aria-controls="panel-general">General</button>
-    <button type="button" id="tab-storage" class="tab" data-tab="storage" role="tab" aria-selected="false" aria-controls="panel-storage">Storage</button>
-    <button type="button" id="tab-appearance" class="tab" data-tab="appearance" role="tab" aria-selected="false" aria-controls="panel-appearance">Appearance</button>
-    <button type="button" id="tab-advanced" class="tab" data-tab="advanced" role="tab" aria-selected="false" aria-controls="panel-advanced">Advanced</button>
+    <button type="button" id="tab-general" class="tab active" data-tab="general" role="tab" aria-selected="true" aria-controls="panel-general" tabindex="0">General</button>
+    <button type="button" id="tab-storage" class="tab" data-tab="storage" role="tab" aria-selected="false" aria-controls="panel-storage" tabindex="-1">Storage</button>
+    <button type="button" id="tab-appearance" class="tab" data-tab="appearance" role="tab" aria-selected="false" aria-controls="panel-appearance" tabindex="-1">Appearance</button>
+    <button type="button" id="tab-advanced" class="tab" data-tab="advanced" role="tab" aria-selected="false" aria-controls="panel-advanced" tabindex="-1">Advanced</button>
   </div>
   <form id="form">
     <section id="panel-general" class="tab-panel active" data-panel="general" role="tabpanel" aria-labelledby="tab-general">

@@ -43,16 +43,42 @@ const captureCheckboxes: Record<CaptureType, HTMLInputElement> = {
   richtext: captureRichtextEl,
 };
 
-document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll<HTMLButtonElement>(".tab").forEach((t) => {
-      t.classList.remove("active");
-      t.setAttribute("aria-selected", "false");
-    });
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    tab.setAttribute("aria-selected", "true");
-    document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`)?.classList.add("active");
+const tabEls = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
+
+function activateTab(tab: HTMLButtonElement, focus: boolean) {
+  tabEls.forEach((t) => {
+    t.classList.remove("active");
+    t.setAttribute("aria-selected", "false");
+    t.tabIndex = -1;
+  });
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+  tab.classList.add("active");
+  tab.setAttribute("aria-selected", "true");
+  tab.tabIndex = 0;
+  document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`)?.classList.add("active");
+  if (focus) tab.focus();
+}
+
+tabEls.forEach((tab) => {
+  tab.addEventListener("click", () => activateTab(tab, false));
+
+  // Standard ARIA tabs keyboard pattern: Left/Right (and Home/End) move
+  // focus and activate the tab, mirroring the roving-tabindex convention
+  // screen reader users expect from role="tablist".
+  tab.addEventListener("keydown", (e) => {
+    let target: HTMLButtonElement | undefined;
+    if (e.key === "ArrowRight") {
+      target = tabEls[(tabEls.indexOf(tab) + 1) % tabEls.length];
+    } else if (e.key === "ArrowLeft") {
+      target = tabEls[(tabEls.indexOf(tab) - 1 + tabEls.length) % tabEls.length];
+    } else if (e.key === "Home") {
+      target = tabEls[0];
+    } else if (e.key === "End") {
+      target = tabEls[tabEls.length - 1];
+    }
+    if (!target) return;
+    e.preventDefault();
+    activateTab(target, true);
   });
 });
 
