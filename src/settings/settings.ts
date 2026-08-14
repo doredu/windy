@@ -130,6 +130,7 @@ hotkeyRecordEl.addEventListener("click", () => {
   if (recording) {
     stopRecording();
     hotkeyEl.value = previousHotkey;
+    hotkeyErrorEl.textContent = "";
     return;
   }
   previousHotkey = hotkeyEl.value;
@@ -147,6 +148,7 @@ document.addEventListener("keydown", (e) => {
 
   if (e.key === "Escape") {
     hotkeyEl.value = previousHotkey;
+    hotkeyErrorEl.textContent = "";
     stopRecording();
     return;
   }
