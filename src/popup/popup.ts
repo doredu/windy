@@ -148,9 +148,20 @@ function render() {
   // Rebuilding the list below removes the focused node from the document if
   // focus was on a row's delete button (e.g. mid keyboard-driven cleanup),
   // which per DOM spec silently drops focus to <body> with no refocus. Track
-  // that so we can restore focus to an equivalent control after rebuilding.
-  const hadDeleteFocus = listEl.contains(document.activeElement) &&
-    (document.activeElement as HTMLElement)?.classList.contains("delete");
+  // *which row index* had focus (not just whether one did) so a rebuild
+  // triggered by mouseenter changing selectedIndex to a different row (e.g.
+  // the mouse passing over row 7 while row 3's delete button is keyboard-
+  // focused) restores focus to the row that actually had it, instead of
+  // silently redirecting keyboard focus -- and the next Enter/Space press --
+  // to whichever row the mouse happens to be hovering.
+  let focusedDeleteRowIndex = -1;
+  if (listEl.contains(document.activeElement)) {
+    const active = document.activeElement as HTMLElement;
+    if (active.classList.contains("delete")) {
+      const row = active.closest(".row");
+      focusedDeleteRowIndex = row ? Array.from(listEl.children).indexOf(row) : -1;
+    }
+  }
   listEl.innerHTML = "";
   if (filtered.length === 0) {
     searchEl.removeAttribute("aria-activedescendant");
@@ -160,7 +171,7 @@ function render() {
       ? "Clipboard history is empty"
       : "No matches";
     listEl.appendChild(empty);
-    if (hadDeleteFocus) searchEl.focus();
+    if (focusedDeleteRowIndex !== -1) searchEl.focus();
     return;
   }
   if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
@@ -264,8 +275,9 @@ function render() {
   });
   searchEl.setAttribute("aria-activedescendant", `row-${selectedIndex}`);
   listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
-  if (hadDeleteFocus) {
-    listEl.children[selectedIndex]?.querySelector<HTMLButtonElement>(".delete")?.focus();
+  if (focusedDeleteRowIndex !== -1) {
+    const restoreIndex = Math.min(focusedDeleteRowIndex, filtered.length - 1);
+    listEl.children[restoreIndex]?.querySelector<HTMLButtonElement>(".delete")?.focus();
   }
 }
 
