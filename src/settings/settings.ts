@@ -23,6 +23,7 @@ const captureImageEl = document.getElementById("captureImage") as HTMLInputEleme
 const captureFilesEl = document.getElementById("captureFiles") as HTMLInputElement;
 const captureRichtextEl = document.getElementById("captureRichtext") as HTMLInputElement;
 const opacityEl = document.getElementById("popupOpacity") as HTMLInputElement;
+const opacityValueEl = document.getElementById("popupOpacityValue")!;
 const bgColorEl = document.getElementById("popupBgColor") as HTMLInputElement;
 const accentColorEl = document.getElementById("popupAccentColor") as HTMLInputElement;
 const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectElement;
@@ -56,6 +57,10 @@ clearHistoryOnQuitEl.addEventListener("change", () => {
   if (!clearHistoryOnQuitEl.checked) clearClipboardOnQuitEl.checked = false;
 });
 
+opacityEl.addEventListener("input", () => {
+  opacityValueEl.textContent = `${opacityEl.value}%`;
+});
+
 async function load() {
   const settings = await getSettings();
   maxItemsEl.value = settings.max_items?.toString() ?? "";
@@ -68,6 +73,7 @@ async function load() {
     el.checked = settings.capture_types.includes(kind as CaptureType);
   }
   opacityEl.value = Math.round(settings.popup_opacity * 100).toString();
+  opacityValueEl.textContent = `${opacityEl.value}%`;
   bgColorEl.value = settings.popup_bg_color;
   accentColorEl.value = settings.popup_accent_color;
   popupPositionEl.value = settings.popup_position;
