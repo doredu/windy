@@ -67,12 +67,15 @@ const captureCheckboxes: Record<CaptureType, HTMLInputElement> = {
   richtext: captureRichtextEl,
 };
 
+function updateCaptureError() {
+  if (!captureErrorEl.textContent) return;
+  captureErrorEl.textContent = Object.values(captureCheckboxes).some((c) => c.checked)
+    ? ""
+    : "Select at least one type to save to history";
+}
+
 for (const el of Object.values(captureCheckboxes)) {
-  el.addEventListener("change", () => {
-    if (Object.values(captureCheckboxes).some((c) => c.checked)) {
-      captureErrorEl.textContent = "";
-    }
-  });
+  el.addEventListener("change", updateCaptureError);
 }
 
 const tabEls = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
