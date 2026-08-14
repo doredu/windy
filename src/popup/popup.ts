@@ -116,7 +116,12 @@ function render() {
 
     const badge = document.createElement("span");
     badge.className = "badge";
-    badge.textContent = i < 9 ? String(i + 1) : "";
+    if (i < 9) {
+      badge.textContent = String(i + 1);
+      // Surface the digit-key shortcut on hover -- the badge shows the key
+      // but nothing previously explained what pressing it does.
+      badge.title = `Press ${i + 1} to select`;
+    }
     row.appendChild(badge);
 
     const thumb = createThumbnail(item);
