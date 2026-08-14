@@ -16,6 +16,7 @@ const autostartEl = document.getElementById("startWithWindows") as HTMLInputElem
 const hotkeyEl = document.getElementById("hotkey") as HTMLInputElement;
 const hotkeyRecordEl = document.getElementById("hotkeyRecord") as HTMLButtonElement;
 const hotkeyErrorEl = document.getElementById("hotkeyError")!;
+const captureErrorEl = document.getElementById("captureError")!;
 const autoCheckUpdatesEl = document.getElementById("autoCheckUpdates") as HTMLInputElement;
 const sortModeEl = document.getElementById("sortMode") as HTMLSelectElement;
 const captureTextEl = document.getElementById("captureText") as HTMLInputElement;
@@ -42,6 +43,14 @@ const captureCheckboxes: Record<CaptureType, HTMLInputElement> = {
   files: captureFilesEl,
   richtext: captureRichtextEl,
 };
+
+for (const el of Object.values(captureCheckboxes)) {
+  el.addEventListener("change", () => {
+    if (Object.values(captureCheckboxes).some((c) => c.checked)) {
+      captureErrorEl.textContent = "";
+    }
+  });
+}
 
 const tabEls = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
 
@@ -177,6 +186,19 @@ document.addEventListener("keydown", (e) => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   hotkeyErrorEl.textContent = "";
+  const capture_types = (Object.entries(captureCheckboxes) as [CaptureType, HTMLInputElement][])
+    .filter(([, el]) => el.checked)
+    .map(([kind]) => kind);
+  if (capture_types.length === 0) {
+    // Saving with every capture type unchecked would silently stop the
+    // clipboard watcher from recording anything at all, with no other
+    // feedback -- block the save instead of letting that happen by accident.
+    const storageTab = document.getElementById("tab-storage") as HTMLButtonElement;
+    activateTab(storageTab, false);
+    captureErrorEl.textContent = "Select at least one type to save to history";
+    return;
+  }
+  captureErrorEl.textContent = "";
   const settings: SettingsDto = {
     max_items: maxItemsEl.value ? Number(maxItemsEl.value) : null,
     retention_days: retentionEl.value ? Number(retentionEl.value) : null,
@@ -184,9 +206,7 @@ form.addEventListener("submit", async (e) => {
     hotkey: hotkeyEl.value,
     auto_check_updates: autoCheckUpdatesEl.checked,
     sort_mode: sortModeEl.value as SettingsDto["sort_mode"],
-    capture_types: (Object.entries(captureCheckboxes) as [CaptureType, HTMLInputElement][])
-      .filter(([, el]) => el.checked)
-      .map(([kind]) => kind),
+    capture_types,
     popup_opacity: Number(opacityEl.value) / 100,
     popup_bg_color: bgColorEl.value,
     popup_accent_color: accentColorEl.value,
