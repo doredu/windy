@@ -117,9 +117,19 @@ async function selectAndClose(id: number) {
 function applyFilter(resetSelection = true) {
   clearTimeout(errorTimeout);
   errorEl.classList.remove("visible");
+  // Capture the currently-selected item's id before rebuilding `filtered` so
+  // a resetSelection=false refresh (e.g. a new capture landing at index 0
+  // while the popup is open) can re-locate the same item by id instead of
+  // reusing a stale numeric index that now points at a different row.
+  const selectedId = !resetSelection ? filtered[selectedIndex]?.id : undefined;
   const query = searchEl.value.trim().toLowerCase();
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
-  if (resetSelection) selectedIndex = 0;
+  if (resetSelection) {
+    selectedIndex = 0;
+  } else if (selectedId !== undefined) {
+    const byId = filtered.findIndex((item) => item.id === selectedId);
+    selectedIndex = byId >= 0 ? byId : Math.min(selectedIndex, filtered.length - 1);
+  }
   clearSearchEl.classList.toggle("visible", searchEl.value.length > 0);
   // Empty-history previously left #count blank, so the aria-live region
   // (iteration 22) never announced anything to screen reader users -- unlike
