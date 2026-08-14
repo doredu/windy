@@ -112,6 +112,15 @@ function render() {
       await getCurrentWindow().hide();
     };
 
+    // Keep keyboard selection (used by Enter/scrollIntoView) in sync with
+    // the mouse -- otherwise hovering a different row than the last
+    // arrow-key selection and pressing Enter would select the wrong item.
+    row.onmouseenter = () => {
+      if (selectedIndex === i) return;
+      selectedIndex = i;
+      render();
+    };
+
     listEl.appendChild(row);
   });
   listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
