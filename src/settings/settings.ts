@@ -6,6 +6,7 @@ import {
   installUpdate,
   clearHistory,
   onWindowFocusChanged,
+  onCloseRequested,
   type CaptureType,
   type SettingsDto,
   type UpdateStatusDto,
@@ -272,20 +273,25 @@ document.addEventListener("keydown", (e) => {
   markDirty();
 });
 
-// The Settings window is a decorated OS window (native close button already
-// hides it, see main.rs), but it had no Escape shortcut, unlike the popup
-// window which closes on Escape. Skip while a hotkey recording is in
-// progress -- that state already consumes Escape itself (cancel recording)
-// via the keydown listener above.
-document.addEventListener("keydown", async (e) => {
-  if (e.key !== "Escape" || recording) return;
-  // Without this, edits made but not yet saved (e.g. changing a few fields
-  // then hitting Escape out of habit) were silently discarded with no
-  // warning -- the same kind of unnoticed state loss as the mid-interaction
-  // bugs fixed in earlier iterations, just triggered by closing the window.
+// Shared by Escape and the native titlebar close button (main.rs emits
+// `close-requested` instead of hiding directly so both paths get the same
+// unsaved-changes protection -- previously only Escape checked `dirty`,
+// so clicking the OS window's X silently discarded in-progress edits.
+async function closeIfConfirmed() {
   if (dirty && !confirm("Discard unsaved changes?")) return;
   await getCurrentWindow().hide();
+}
+
+// The Settings window is a decorated OS window, but it had no Escape
+// shortcut, unlike the popup window which closes on Escape. Skip while a
+// hotkey recording is in progress -- that state already consumes Escape
+// itself (cancel recording) via the keydown listener above.
+document.addEventListener("keydown", async (e) => {
+  if (e.key !== "Escape" || recording) return;
+  await closeIfConfirmed();
 });
+
+onCloseRequested(closeIfConfirmed);
 
 let statusTimeout: number | undefined;
 

@@ -73,9 +73,17 @@ fn main() {
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let settings_window_handle = settings_window.clone();
                 settings_window.on_window_event(move |event| {
+                    use tauri::Emitter;
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = settings_window_handle.hide();
+                        // Always defer to the frontend rather than hiding
+                        // unconditionally: settings.ts already prompts to
+                        // discard unsaved changes on Escape, but the native
+                        // titlebar X bypassed that check entirely, silently
+                        // discarding in-progress edits. Emitting an event and
+                        // letting JS call hide() itself (after its own dirty
+                        // check) covers both close paths with one code path.
+                        let _ = settings_window_handle.emit("close-requested", ());
                     }
                 });
             }

@@ -57,5 +57,6 @@ export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
   listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
 export const onHistoryUpdated = (cb: () => void) => listen("history-updated", () => cb());
 export const onSettingsUpdated = (cb: () => void) => listen("settings-updated", () => cb());
+export const onCloseRequested = (cb: () => void) => listen("close-requested", () => cb());
 export const onWindowFocusChanged = (cb: (focused: boolean) => void) =>
   getCurrentWindow().onFocusChanged(({ payload }) => cb(payload));
