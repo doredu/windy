@@ -54,6 +54,11 @@ function createThumbnail(item: HistoryItemDto): HTMLElement | null {
     const icon = document.createElement("span");
     icon.className = "thumb-icon";
     icon.innerHTML = item.kind === "files" ? FOLDER_ICON_SVG : DOC_ICON_SVG;
+    // The folder/document icons convey the item's kind visually only --
+    // unlike images (self-evident thumbnail) or text (plain preview text),
+    // a first-time user has no textual confirmation of what "files" or
+    // "richtext" actually means until they hover.
+    icon.title = item.kind === "files" ? "Files" : "Rich text";
     return icon;
   }
   return null;
