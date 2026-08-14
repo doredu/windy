@@ -211,6 +211,13 @@ pub fn set_settings(
     tray_menu: State<TrayMenu>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Applied to the live hotkey listener thread first, and before any
+    // setting is persisted -- if the combo is invalid or already claimed by
+    // another app, bail before writing anything, so a failed save can never
+    // leave a partial set of fields (e.g. max_items) silently committed
+    // while the UI reports the whole save as failed.
+    hotkey.rebind(settings.hotkey.clone())?;
+
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     match settings.max_items {
         Some(v) => s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?,
@@ -223,10 +230,6 @@ pub fn set_settings(
     s.set_setting("start_with_windows", if settings.start_with_windows { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
 
-    // Applied to the live hotkey listener thread first -- if the combo is
-    // invalid or already claimed by another app, bail before persisting it
-    // so settings never disagree with what's actually registered.
-    hotkey.rebind(settings.hotkey.clone())?;
     s.set_setting("hotkey", &settings.hotkey).map_err(|e| e.to_string())?;
     // Keep the tray's "Open History" label in sync with the newly-rebound
     // combo -- best-effort, a failed relabel shouldn't fail the whole save.
