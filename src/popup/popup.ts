@@ -62,9 +62,16 @@ clearSearchEl.addEventListener("click", () => {
 // that, the popup would just silently stay open (select) or appear to do
 // nothing (delete), the same class of silent-failure bug fixed in Settings
 // (save errors, capture-type validation).
+let errorTimeout: number | undefined;
+
 function showError(err: unknown) {
   errorEl.textContent = String(err);
   errorEl.classList.add("visible");
+  // Errors previously only cleared on the next search/filter action -- if
+  // the user doesn't touch the search box afterward, a stale failure
+  // message could linger on screen indefinitely.
+  clearTimeout(errorTimeout);
+  errorTimeout = setTimeout(() => errorEl.classList.remove("visible"), 4000);
 }
 
 async function selectAndClose(id: number) {
@@ -78,6 +85,7 @@ async function selectAndClose(id: number) {
 }
 
 function applyFilter(resetSelection = true) {
+  clearTimeout(errorTimeout);
   errorEl.classList.remove("visible");
   const query = searchEl.value.trim().toLowerCase();
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
