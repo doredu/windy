@@ -194,6 +194,8 @@ document.addEventListener("keydown", (e) => {
   stopRecording();
 });
 
+let statusTimeout: number | undefined;
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   hotkeyErrorEl.textContent = "";
@@ -267,7 +269,10 @@ form.addEventListener("submit", async (e) => {
     saveBtn.textContent = "Save";
   }
   status.classList.add("visible");
-  setTimeout(() => status.classList.remove("visible"), 1500);
+  // Guard against a stale timeout from an earlier save hiding this run's
+  // status message early if Save is clicked again within the display window.
+  clearTimeout(statusTimeout);
+  statusTimeout = setTimeout(() => status.classList.remove("visible"), 1500);
 });
 
 let clearHistoryStatusTimeout: number | undefined;
