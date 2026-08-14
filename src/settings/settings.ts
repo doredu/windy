@@ -515,6 +515,11 @@ form.addEventListener("submit", async (e) => {
 let clearHistoryStatusTimeout: number | undefined;
 
 clearHistoryBtn.addEventListener("click", async () => {
+  // Disable immediately (before the async count fetch below) so a rapid
+  // double-click can't fire this handler twice and surface two overlapping
+  // confirm() prompts -- every other async button handler in this file
+  // disables itself as its first synchronous step for the same reason.
+  clearHistoryBtn.disabled = true;
   // The confirm prompt previously gave no sense of scale ("all clipboard
   // history" could mean 2 items or 2,000) -- showing the actual count makes
   // this destructive action's impact concrete before the user commits to it.
@@ -535,10 +540,13 @@ clearHistoryBtn.addEventListener("click", async () => {
     clearHistoryStatusEl.textContent = message;
     clearTimeout(clearHistoryStatusTimeout);
     clearHistoryStatusTimeout = setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
+    clearHistoryBtn.disabled = false;
     return;
   }
-  if (!confirm(message)) return;
-  clearHistoryBtn.disabled = true;
+  if (!confirm(message)) {
+    clearHistoryBtn.disabled = false;
+    return;
+  }
   clearHistoryBtn.textContent = "Clearing…";
   try {
     await clearHistory();
