@@ -24,4 +24,9 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--popup-b
 .size { font-size: 11px; opacity: 0.5; flex-shrink: 0; }
 .delete { visibility: hidden; background: none; border: none; border-radius: 3px; color: #eee; opacity: 0.6; cursor: pointer; font-size: 14px; }
 .delete:hover { opacity: 1; color: #ff6b6b; background: rgba(255,255,255,0.1); }
+.delete:focus-visible { visibility: visible; }
+#search:focus-visible, #close:focus-visible, #clear-search:focus-visible, .delete:focus-visible {
+  outline: 2px solid var(--popup-accent-color, #4f8cff);
+  outline-offset: 1px;
+}
 .empty { padding: 20px 10px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); }

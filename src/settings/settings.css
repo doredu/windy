@@ -167,6 +167,11 @@ button {
 
 button:hover { background: #6b9fff; }
 button:active { background: #3d75e0; }
+button:focus-visible,
+.tab:focus-visible {
+  outline: 2px solid #4f8cff;
+  outline-offset: 2px;
+}
 
 #status {
   font-size: 12px;
