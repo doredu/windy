@@ -8,6 +8,8 @@ import {
   getHistory,
   onWindowFocusChanged,
   onCloseRequested,
+  onQuitRequested,
+  quitApp,
   type CaptureType,
   type SettingsDto,
   type UpdateStatusDto,
@@ -316,6 +318,15 @@ document.addEventListener("keydown", async (e) => {
 });
 
 onCloseRequested(closeIfConfirmed);
+
+// The tray's Quit item used to call app.exit(0) directly, bypassing this
+// window entirely and silently discarding unsaved edits -- main.rs now
+// defers to this same confirm() (instead of hiding, actually exit via
+// quit_app once resolved) whenever Settings is open when Quit is chosen.
+onQuitRequested(async () => {
+  if (dirty && !confirm("Discard unsaved changes and quit?")) return;
+  await quitApp();
+});
 
 let statusTimeout: number | undefined;
 

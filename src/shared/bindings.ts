@@ -52,11 +52,13 @@ export const setSettings = (settings: SettingsDto) => invoke<void>("set_settings
 export const getUpdateStatus = () => invoke<UpdateStatusDto>("get_update_status");
 export const checkForUpdates = () => invoke<UpdateStatusDto>("check_for_updates");
 export const installUpdate = () => invoke<void>("install_update");
+export const quitApp = () => invoke<void>("quit_app");
 
 export const onTogglePopup = (cb: (pos: { x: number; y: number }) => void) =>
   listen<{ x: number; y: number }>("toggle-popup", (e) => cb(e.payload));
 export const onHistoryUpdated = (cb: () => void) => listen("history-updated", () => cb());
 export const onSettingsUpdated = (cb: () => void) => listen("settings-updated", () => cb());
 export const onCloseRequested = (cb: () => void) => listen("close-requested", () => cb());
+export const onQuitRequested = (cb: () => void) => listen("quit-requested", () => cb());
 export const onWindowFocusChanged = (cb: (focused: boolean) => void) =>
   getCurrentWindow().onFocusChanged(({ payload }) => cb(payload));

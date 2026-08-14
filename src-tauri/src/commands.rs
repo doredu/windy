@@ -108,6 +108,40 @@ pub fn clear_history(app: AppHandle, store: State<Store>) -> Result<(), String> 
     Ok(())
 }
 
+/// Applies `clear_history_on_quit`/`clear_clipboard_on_quit` (if enabled) and
+/// exits the process. Shared by the tray's Quit menu item (used directly when
+/// the Settings window isn't open) and the `quit_app` command below (called
+/// once the Settings window's own unsaved-changes prompt has been resolved).
+pub fn perform_quit(app: &AppHandle, store: &Store) {
+    let s = store.lock().unwrap_or_else(PoisonError::into_inner);
+    let clear_history = s.get_setting("clear_history_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let clear_clipboard = s.get_setting("clear_clipboard_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
+    if clear_history {
+        if let Ok(paths) = s.clear_all() {
+            for path in paths {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    drop(s);
+    if clear_clipboard {
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            let _ = clipboard.clear();
+        }
+    }
+    app.exit(0);
+}
+
+/// Called from the Settings window once it has resolved its own
+/// unsaved-changes prompt (see `quit-requested` in main.rs) -- the tray's
+/// Quit item used to call `app.exit(0)` unconditionally, silently discarding
+/// any in-progress Settings edits with no warning, unlike every other close
+/// path in this app (Escape, the titlebar X).
+#[tauri::command]
+pub fn quit_app(app: AppHandle, store: State<Store>) {
+    perform_quit(&app, store.inner());
+}
+
 #[tauri::command]
 pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);

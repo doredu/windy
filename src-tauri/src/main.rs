@@ -22,6 +22,7 @@ fn main() {
             commands::get_update_status,
             commands::check_for_updates,
             commands::install_update,
+            commands::quit_app,
         ])
         .setup(|app| {
             use tauri::Manager;
@@ -129,24 +130,28 @@ fn main() {
                     }
                     "quit" => {
                         use tauri::Manager;
-                        let store = app.state::<commands::Store>();
-                        let s = store.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                        let clear_history = s.get_setting("clear_history_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
-                        let clear_clipboard = s.get_setting("clear_clipboard_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
-                        if clear_history {
-                            if let Ok(paths) = s.clear_all() {
-                                for path in paths {
-                                    let _ = std::fs::remove_file(path);
-                                }
+                        // Every other way of leaving the Settings window
+                        // (Escape, the titlebar X) already prompts to discard
+                        // unsaved edits -- quitting via the tray bypassed
+                        // that entirely and silently threw them away. Defer
+                        // to the same frontend confirm() via a round-trip
+                        // event instead of exiting immediately whenever
+                        // Settings is open; commands::quit_app (called back
+                        // once the prompt is resolved) does the actual exit.
+                        let settings_open = app
+                            .get_webview_window("settings")
+                            .and_then(|w| w.is_visible().ok())
+                            .unwrap_or(false);
+                        if settings_open {
+                            if let Some(w) = app.get_webview_window("settings") {
+                                use tauri::Emitter;
+                                let _ = w.set_focus();
+                                let _ = w.emit("quit-requested", ());
                             }
+                        } else {
+                            let store = app.state::<commands::Store>();
+                            commands::perform_quit(app, store.inner());
                         }
-                        drop(s);
-                        if clear_clipboard {
-                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                                let _ = clipboard.clear();
-                            }
-                        }
-                        app.exit(0)
                     }
                     _ => {}
                 })
