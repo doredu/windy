@@ -45,3 +45,4 @@ html.light-bg .size { color: rgba(0,0,0,0.5); }
 html.light-bg .delete { color: #1e1e22; }
 html.light-bg .delete:hover { color: #d13a3a; }
 html.light-bg .empty { color: rgba(0,0,0,0.45); }
+html.light-bg #error { color: #c0342f; background: rgba(192,52,47,0.08); border-bottom-color: rgba(192,52,47,0.2); }
