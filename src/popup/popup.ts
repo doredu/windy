@@ -117,11 +117,14 @@ function applyFilter(resetSelection = true) {
   filtered = query ? items.filter((item) => item.preview.toLowerCase().includes(query)) : items;
   if (resetSelection) selectedIndex = 0;
   clearSearchEl.classList.toggle("visible", searchEl.value.length > 0);
+  // Empty-history previously left #count blank, so the aria-live region
+  // (iteration 22) never announced anything to screen reader users -- unlike
+  // the "0 of N" case for a search with no matches, which is announced fine.
   countEl.textContent = query
     ? `${filtered.length} of ${items.length}`
     : items.length
     ? `${items.length}`
-    : "";
+    : "No items";
   render();
 }
 
