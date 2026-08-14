@@ -10,6 +10,7 @@ import {
   type SettingsDto,
   type UpdateStatusDto,
 } from "../shared/bindings.ts";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const maxItemsEl = document.getElementById("maxItems") as HTMLInputElement;
 const retentionEl = document.getElementById("retentionDays") as HTMLInputElement;
@@ -219,6 +220,16 @@ document.addEventListener("keydown", (e) => {
   hotkeyEl.value = parts.join("+");
   hotkeyErrorEl.textContent = "";
   stopRecording();
+});
+
+// The Settings window is a decorated OS window (native close button already
+// hides it, see main.rs), but it had no Escape shortcut, unlike the popup
+// window which closes on Escape. Skip while a hotkey recording is in
+// progress -- that state already consumes Escape itself (cancel recording)
+// via the keydown listener above.
+document.addEventListener("keydown", async (e) => {
+  if (e.key !== "Escape" || recording) return;
+  await getCurrentWindow().hide();
 });
 
 let statusTimeout: number | undefined;
