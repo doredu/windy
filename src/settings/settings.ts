@@ -176,10 +176,14 @@ resetAccentColorEl.addEventListener("click", () => {
 // so this is the only way back to the default without recording Ctrl+Alt+V
 // by hand.
 hotkeyResetEl.addEventListener("click", () => {
+  // While recording, hotkeyEl.value holds the "Press keys…" placeholder, not
+  // the real current hotkey -- compare against previousHotkey instead so
+  // canceling a recording via Reset doesn't spuriously mark the form dirty.
+  const currentValue = recording ? previousHotkey : hotkeyEl.value;
   if (recording) {
     stopRecording();
   }
-  if (hotkeyEl.value !== DEFAULT_HOTKEY) markDirty();
+  if (currentValue !== DEFAULT_HOTKEY) markDirty();
   hotkeyEl.value = DEFAULT_HOTKEY;
   hotkeyErrorEl.textContent = "";
 });
