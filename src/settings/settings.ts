@@ -310,12 +310,15 @@ function renderUpdateStatus(status: UpdateStatusDto) {
 
 async function manualCheck() {
   updateActionEl.disabled = true;
+  const previousLabel = updateActionEl.textContent;
+  updateActionEl.textContent = "Checking…";
   try {
     const status = await checkForUpdates();
     renderUpdateStatus(status);
   } catch {
     updateBannerEl.classList.add("error");
     updateTextEl.textContent = "Check failed — try again later";
+    updateActionEl.textContent = previousLabel;
   } finally {
     updateActionEl.disabled = false;
   }
