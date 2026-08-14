@@ -44,6 +44,7 @@ const status = document.getElementById("status")!;
 const updateBannerEl = document.getElementById("updateBanner")!;
 const updateTextEl = document.getElementById("updateText")!;
 const updateActionEl = document.getElementById("updateAction") as HTMLButtonElement;
+const updateNotesEl = document.getElementById("updateNotes")!;
 
 const captureCheckboxes: Record<CaptureType, HTMLInputElement> = {
   text: captureTextEl,
@@ -343,11 +344,21 @@ function renderUpdateStatus(status: UpdateStatusDto) {
     updateActionEl.textContent = "Update";
     updateActionEl.onclick = installNow;
     updateBannerEl.classList.remove("hidden");
+    // The updater fetches the release's notes/changelog (backend
+    // UpdateStatusDto.notes) but nothing in the UI ever rendered it --
+    // users had to click Update blind, with no way to see what changed.
+    if (status.notes) {
+      updateNotesEl.textContent = status.notes;
+      updateNotesEl.classList.remove("hidden");
+    } else {
+      updateNotesEl.classList.add("hidden");
+    }
   } else {
     updateTextEl.textContent = "Up to date";
     updateActionEl.textContent = "Check for updates";
     updateActionEl.onclick = manualCheck;
     updateBannerEl.classList.remove("hidden");
+    updateNotesEl.classList.add("hidden");
   }
 }
 

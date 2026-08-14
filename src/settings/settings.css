@@ -239,10 +239,6 @@ button:disabled:active {
 #status.visible { opacity: 1; transform: translateY(0); }
 
 .update-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   background: rgba(79, 140, 255, 0.12);
   border: 1px solid rgba(79, 140, 255, 0.35);
   border-radius: 6px;
@@ -254,10 +250,29 @@ button:disabled:active {
 
 .update-banner.hidden { display: none; }
 
+.update-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .update-banner button {
   padding: 4px 10px;
   font-size: 12px;
 }
+
+.update-notes {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(79, 140, 255, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.update-notes.hidden { display: none; }
 
 .update-banner.error {
   background: rgba(255, 90, 90, 0.12);

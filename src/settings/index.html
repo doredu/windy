@@ -3,8 +3,11 @@
 <script type="module" src="../dist/settings/settings.js"></script></head>
 <body>
   <div id="updateBanner" class="update-banner hidden">
-    <span id="updateText" role="status"></span>
-    <button type="button" id="updateAction"></button>
+    <div class="update-banner-row">
+      <span id="updateText" role="status"></span>
+      <button type="button" id="updateAction"></button>
+    </div>
+    <p id="updateNotes" class="update-notes hidden"></p>
   </div>
   <div class="tabs" role="tablist">
     <button type="button" id="tab-general" class="tab active" data-tab="general" role="tab" aria-selected="true" aria-controls="panel-general" tabindex="0">General</button>
