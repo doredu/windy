@@ -206,18 +206,30 @@ async function applyTheme() {
   const settings = await getSettings();
   const root = document.documentElement.style;
   root.setProperty("--popup-bg", hexToRgba(settings.popup_bg_color, settings.popup_opacity));
-  // Fixed alpha, independent of the opacity slider (which only controls the
-  // popup background) -- matches the original hardcoded hover look
-  // (`rgba(255,255,255,0.08)`) when the accent color is left at its default.
-  root.setProperty("--popup-accent-bg", hexToRgba(settings.popup_accent_color, 0.08));
-  root.setProperty("--popup-accent-color", settings.popup_accent_color);
+  // --popup-accent-bg/--popup-accent-color are set inline here unconditionally,
+  // which means the var(--popup-accent-color, <fallback>) fallbacks used by
+  // light-bg CSS rules (e.g. .badge in popup.css) never actually apply -- the
+  // property is always defined. When the popup background is light AND the
+  // accent color is still its light default (#ffffff), a low-alpha white tint
+  // on a light background is invisible, wiping out the row hover/active
+  // highlight, the search-focus border, and the .badge accent color all at
+  // once. Fall back to a dark tint in that case instead of relying on dead
+  // CSS fallbacks.
+  const bgIsLight = isLightColor(settings.popup_bg_color);
+  if (bgIsLight && isLightColor(settings.popup_accent_color)) {
+    root.setProperty("--popup-accent-bg", "rgba(0,0,0,0.08)");
+    root.setProperty("--popup-accent-color", "rgba(0,0,0,0.55)");
+  } else {
+    // Fixed alpha, independent of the opacity slider (which only controls the
+    // popup background) -- matches the original hardcoded hover look
+    // (`rgba(255,255,255,0.08)`) when the accent color is left at its default.
+    root.setProperty("--popup-accent-bg", hexToRgba(settings.popup_accent_color, 0.08));
+    root.setProperty("--popup-accent-color", settings.popup_accent_color);
+  }
   // Text/icon colors default to a light palette suited to the default dark
   // background -- flip to a dark palette when the user picks a light
   // background so text stays readable instead of light-on-light.
-  document.documentElement.classList.toggle(
-    "light-bg",
-    isLightColor(settings.popup_bg_color),
-  );
+  document.documentElement.classList.toggle("light-bg", bgIsLight);
 }
 
 // Registered once at module load — not per-render — so we never accumulate
