@@ -359,6 +359,7 @@ fn item_size(item: &crate::store::HistoryItem) -> Option<String> {
             let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).ok()?;
             Some(format!("{} file{}", paths.len(), if paths.len() == 1 { "" } else { "s" }))
         }
+        "richtext" => item.content_alt.as_ref().map(|c| format_size(c.len() as u64)),
         _ => item.content.as_ref().map(|c| format_size(c.len() as u64)),
     }
 }
@@ -487,7 +488,11 @@ mod tests {
         let item = HistoryItem {
             id: 1,
             kind: "richtext".into(),
-            content: Some("x".repeat(2048)),
+            // content (HTML markup) and content_alt (plain-text) deliberately
+            // differ in length so this test proves the size badge is derived
+            // from content_alt (what the preview/tooltip actually show for
+            // richtext), not the hidden HTML markup in content.
+            content: Some("x".repeat(9000)),
             content_alt: Some("x".repeat(2048)),
             image_path: None,
             thumb_path: None,
