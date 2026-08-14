@@ -4,6 +4,7 @@ import {
   getUpdateStatus,
   checkForUpdates,
   installUpdate,
+  clearHistory,
   onWindowFocusChanged,
   type CaptureType,
   type SettingsDto,
@@ -31,6 +32,8 @@ const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectEl
 const popupPinEl = document.getElementById("popupPin") as HTMLSelectElement;
 const clearHistoryOnQuitEl = document.getElementById("clearHistoryOnQuit") as HTMLInputElement;
 const clearClipboardOnQuitEl = document.getElementById("clearClipboardOnQuit") as HTMLInputElement;
+const clearHistoryBtn = document.getElementById("clearHistoryBtn") as HTMLButtonElement;
+const clearHistoryStatusEl = document.getElementById("clearHistoryStatus")!;
 const form = document.getElementById("form") as HTMLFormElement;
 const status = document.getElementById("status")!;
 const updateBannerEl = document.getElementById("updateBanner")!;
@@ -229,6 +232,20 @@ form.addEventListener("submit", async (e) => {
   }
   status.classList.add("visible");
   setTimeout(() => status.classList.remove("visible"), 1500);
+});
+
+clearHistoryBtn.addEventListener("click", async () => {
+  if (!confirm("Delete all clipboard history? This can't be undone.")) return;
+  clearHistoryBtn.disabled = true;
+  try {
+    await clearHistory();
+    clearHistoryStatusEl.textContent = "History cleared";
+  } catch (err) {
+    clearHistoryStatusEl.textContent = String(err);
+  } finally {
+    clearHistoryBtn.disabled = false;
+    setTimeout(() => (clearHistoryStatusEl.textContent = ""), 2000);
+  }
 });
 
 function renderUpdateStatus(status: UpdateStatusDto) {

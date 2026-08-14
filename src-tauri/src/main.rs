@@ -16,6 +16,7 @@ fn main() {
             commands::get_history,
             commands::select_item,
             commands::delete_item,
+            commands::clear_history,
             commands::get_settings,
             commands::set_settings,
             commands::get_update_status,

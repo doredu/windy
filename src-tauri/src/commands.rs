@@ -88,6 +88,15 @@ pub fn delete_item(id: i64, store: State<Store>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn clear_history(store: State<Store>) -> Result<(), String> {
+    let paths = store.lock().unwrap_or_else(PoisonError::into_inner).clear_all().map_err(|e| e.to_string())?;
+    for path in paths {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_settings(store: State<Store>) -> Result<SettingsDto, String> {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(SettingsDto {

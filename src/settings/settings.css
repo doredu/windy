@@ -100,6 +100,22 @@ input[type="text"]#hotkey.recording {
   min-height: 14px;
 }
 
+.field-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  min-height: 14px;
+}
+
+.danger-btn {
+  background: transparent;
+  border: 1px solid #e0524d;
+  color: #e0524d;
+  align-self: flex-start;
+}
+
+.danger-btn:hover { background: rgba(224, 82, 77, 0.15); }
+.danger-btn:active { background: rgba(224, 82, 77, 0.25); }
+
 select {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
