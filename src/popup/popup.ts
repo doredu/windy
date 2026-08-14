@@ -145,6 +145,12 @@ function applyFilter(resetSelection = true) {
 searchEl.addEventListener("input", () => applyFilter());
 
 function render() {
+  // Rebuilding the list below removes the focused node from the document if
+  // focus was on a row's delete button (e.g. mid keyboard-driven cleanup),
+  // which per DOM spec silently drops focus to <body> with no refocus. Track
+  // that so we can restore focus to an equivalent control after rebuilding.
+  const hadDeleteFocus = listEl.contains(document.activeElement) &&
+    (document.activeElement as HTMLElement)?.classList.contains("delete");
   listEl.innerHTML = "";
   if (filtered.length === 0) {
     searchEl.removeAttribute("aria-activedescendant");
@@ -154,6 +160,7 @@ function render() {
       ? "Clipboard history is empty"
       : "No matches";
     listEl.appendChild(empty);
+    if (hadDeleteFocus) searchEl.focus();
     return;
   }
   if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
@@ -257,6 +264,9 @@ function render() {
   });
   searchEl.setAttribute("aria-activedescendant", `row-${selectedIndex}`);
   listEl.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
+  if (hadDeleteFocus) {
+    listEl.children[selectedIndex]?.querySelector<HTMLButtonElement>(".delete")?.focus();
+  }
 }
 
 // `resetSelection` is false for post-delete refreshes so removing an item
