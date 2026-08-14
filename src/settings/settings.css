@@ -159,6 +159,15 @@ select:hover { background: rgba(255, 255, 255, 0.09); }
 select:focus { border-color: #4f8cff; background: rgba(255, 255, 255, 0.09); }
 select:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* popupPin is programmatically disabled when Position is "Bottom-right
+   corner" (settings.ts), but its wrapping label/hint stayed full-opacity --
+   same "disabled control looks half-active" gap already fixed for
+   .checkbox-field below, just for this select's .field wrapper instead. */
+.field:has(select:disabled) label,
+.field:has(select:disabled) .field-hint {
+  opacity: 0.5;
+}
+
 input[type="range"] {
   width: 100%;
   accent-color: #4f8cff;
