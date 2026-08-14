@@ -629,6 +629,23 @@ async function loadUpdateStatus() {
 load();
 loadUpdateStatus();
 
+// autostart/hotkey_active reflect live OS state (see load()'s comment), not just
+// the last-saved DB value, but the Settings window is only hidden/shown again
+// via the tray (never recreated), so load() never reran after the initial call --
+// reopening a long-hidden window could show a stale "Start with Windows" checkbox
+// or hide a now-relevant hotkey-inactive warning. Re-check on focus, like
+// loadUpdateStatus() already does, skipping while the user has unsaved edits so
+// we don't clobber in-progress form changes.
+async function refreshLiveState() {
+  if (dirty) return;
+  const settings = await getSettings();
+  autostartEl.checked = settings.start_with_windows;
+  hotkeyInactiveWarningEl.classList.toggle("hidden", settings.hotkey_active !== false);
+}
+
 onWindowFocusChanged((focused) => {
-  if (focused) loadUpdateStatus();
+  if (focused) {
+    loadUpdateStatus();
+    refreshLiveState();
+  }
 });
