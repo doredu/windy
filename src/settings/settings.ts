@@ -44,6 +44,7 @@ const clearHistoryStatusEl = document.getElementById("clearHistoryStatus")!;
 const form = document.getElementById("form") as HTMLFormElement;
 const saveBtn = document.getElementById("saveBtn") as HTMLButtonElement;
 const status = document.getElementById("status")!;
+const unsavedIndicatorEl = document.getElementById("unsavedIndicator")!;
 const updateBannerEl = document.getElementById("updateBanner")!;
 const updateTextEl = document.getElementById("updateText")!;
 const updateActionEl = document.getElementById("updateAction") as HTMLButtonElement;
@@ -132,17 +133,17 @@ const DEFAULT_POPUP_ACCENT_COLOR = "#ffffff";
 resetOpacityEl.addEventListener("click", () => {
   opacityEl.value = DEFAULT_POPUP_OPACITY;
   opacityValueEl.textContent = `${opacityEl.value}%`;
-  dirty = true;
+  markDirty();
 });
 resetBgColorEl.addEventListener("click", () => {
   bgColorEl.value = DEFAULT_POPUP_BG_COLOR;
   bgColorValueEl.textContent = bgColorEl.value;
-  dirty = true;
+  markDirty();
 });
 resetAccentColorEl.addEventListener("click", () => {
   accentColorEl.value = DEFAULT_POPUP_ACCENT_COLOR;
   accentColorValueEl.textContent = accentColorEl.value;
-  dirty = true;
+  markDirty();
 });
 
 for (const el of [maxItemsEl, retentionEl]) {
@@ -155,12 +156,16 @@ for (const el of [maxItemsEl, retentionEl]) {
 // save, so Escape (added in a prior iteration to close the window) can warn
 // before silently discarding in-progress edits instead of just hiding.
 let dirty = false;
-form.addEventListener("input", () => {
+function markDirty() {
   dirty = true;
-});
-form.addEventListener("change", () => {
-  dirty = true;
-});
+  unsavedIndicatorEl.classList.add("visible");
+}
+function clearDirty() {
+  dirty = false;
+  unsavedIndicatorEl.classList.remove("visible");
+}
+form.addEventListener("input", markDirty);
+form.addEventListener("change", markDirty);
 
 async function load() {
   const settings = await getSettings();
@@ -184,7 +189,7 @@ async function load() {
   clearHistoryOnQuitEl.checked = settings.clear_history_on_quit;
   clearClipboardOnQuitEl.checked = settings.clear_clipboard_on_quit;
   clearClipboardOnQuitEl.disabled = !settings.clear_history_on_quit;
-  dirty = false;
+  clearDirty();
 }
 
 // Press-to-record hotkey capture: click Record, then press a modifier +
@@ -262,7 +267,7 @@ document.addEventListener("keydown", (e) => {
   // hotkeyEl.value is assigned programmatically above, which doesn't fire a
   // native `input` event, so the delegated dirty-tracking listener on the
   // form wouldn't otherwise notice this change.
-  dirty = true;
+  markDirty();
 });
 
 // The Settings window is a decorated OS window (native close button already
@@ -354,7 +359,7 @@ form.addEventListener("submit", async (e) => {
     saveBtn.disabled = false;
     saveBtn.textContent = "Save";
   }
-  dirty = false;
+  clearDirty();
   status.classList.add("visible");
   // Guard against a stale timeout from an earlier save hiding this run's
   // status message early if Save is clicked again within the display window.
