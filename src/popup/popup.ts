@@ -382,6 +382,21 @@ onTogglePopup(async (pos) => {
   searchEl.focus();
 });
 
+// Relative times ("now", "5s", "2m") are stamped into the DOM once at
+// render() time and never revisited -- if the popup is left open (e.g. while
+// searching or browsing), those labels silently go stale. Refresh just the
+// .time text nodes in place rather than calling render(), which would also
+// re-run scrollIntoView() and yank the user's manual scroll position back to
+// the selected row.
+setInterval(() => {
+  const rows = listEl.querySelectorAll<HTMLElement>(".row");
+  rows.forEach((row, i) => {
+    const item = filtered[i];
+    const timeEl = row.querySelector(".time");
+    if (item && timeEl) timeEl.textContent = formatRelativeTime(item.created_at);
+  });
+}, 30000);
+
 onHistoryUpdated(refresh);
 // Settings changes (e.g. sort order, capture types) can change what
 // get_history returns, not just theming -- re-fetch the list too, not just
