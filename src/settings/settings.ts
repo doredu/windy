@@ -18,6 +18,7 @@ const hotkeyEl = document.getElementById("hotkey") as HTMLInputElement;
 const hotkeyRecordEl = document.getElementById("hotkeyRecord") as HTMLButtonElement;
 const hotkeyErrorEl = document.getElementById("hotkeyError")!;
 const captureErrorEl = document.getElementById("captureError")!;
+const storageErrorEl = document.getElementById("storageError")!;
 const autoCheckUpdatesEl = document.getElementById("autoCheckUpdates") as HTMLInputElement;
 const sortModeEl = document.getElementById("sortMode") as HTMLSelectElement;
 const captureTextEl = document.getElementById("captureText") as HTMLInputElement;
@@ -102,6 +103,12 @@ clearHistoryOnQuitEl.addEventListener("change", () => {
 opacityEl.addEventListener("input", () => {
   opacityValueEl.textContent = `${opacityEl.value}%`;
 });
+
+for (const el of [maxItemsEl, retentionEl]) {
+  el.addEventListener("input", () => {
+    if (!el.value || Number(el.value) >= 1) storageErrorEl.textContent = "";
+  });
+}
 
 async function load() {
   const settings = await getSettings();
@@ -189,6 +196,22 @@ document.addEventListener("keydown", (e) => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   hotkeyErrorEl.textContent = "";
+  const storageTab = document.getElementById("tab-storage") as HTMLButtonElement;
+  // The submit handler calls preventDefault() before any native constraint
+  // validation runs, so the inputs' `min="1"` attribute never actually
+  // blocks a save -- a user can type 0 or a negative number here, which
+  // would make the next prune wipe out the whole history silently.
+  if (maxItemsEl.value && Number(maxItemsEl.value) < 1) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = "Max items must be blank (unlimited) or at least 1";
+    return;
+  }
+  if (retentionEl.value && Number(retentionEl.value) < 1) {
+    activateTab(storageTab, false);
+    storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or at least 1";
+    return;
+  }
+  storageErrorEl.textContent = "";
   const capture_types = (Object.entries(captureCheckboxes) as [CaptureType, HTMLInputElement][])
     .filter(([, el]) => el.checked)
     .map(([kind]) => kind);
@@ -196,7 +219,6 @@ form.addEventListener("submit", async (e) => {
     // Saving with every capture type unchecked would silently stop the
     // clipboard watcher from recording anything at all, with no other
     // feedback -- block the save instead of letting that happen by accident.
-    const storageTab = document.getElementById("tab-storage") as HTMLButtonElement;
     activateTab(storageTab, false);
     captureErrorEl.textContent = "Select at least one type to save to history";
     return;
