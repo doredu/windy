@@ -28,7 +28,9 @@ const captureRichtextEl = document.getElementById("captureRichtext") as HTMLInpu
 const opacityEl = document.getElementById("popupOpacity") as HTMLInputElement;
 const opacityValueEl = document.getElementById("popupOpacityValue")!;
 const bgColorEl = document.getElementById("popupBgColor") as HTMLInputElement;
+const bgColorValueEl = document.getElementById("popupBgColorValue")!;
 const accentColorEl = document.getElementById("popupAccentColor") as HTMLInputElement;
+const accentColorValueEl = document.getElementById("popupAccentColorValue")!;
 const popupPositionEl = document.getElementById("popupPosition") as HTMLSelectElement;
 const popupPinEl = document.getElementById("popupPin") as HTMLSelectElement;
 const clearHistoryOnQuitEl = document.getElementById("clearHistoryOnQuit") as HTMLInputElement;
@@ -105,6 +107,16 @@ opacityEl.addEventListener("input", () => {
   opacityValueEl.textContent = `${opacityEl.value}%`;
 });
 
+// <input type="color"> only exposes its value via the swatch itself -- no
+// hex text is shown anywhere, unlike the opacity slider's percentage
+// readout above, so users can't read or share the exact color they picked.
+bgColorEl.addEventListener("input", () => {
+  bgColorValueEl.textContent = bgColorEl.value;
+});
+accentColorEl.addEventListener("input", () => {
+  accentColorValueEl.textContent = accentColorEl.value;
+});
+
 for (const el of [maxItemsEl, retentionEl]) {
   el.addEventListener("input", () => {
     if (!el.value || Number(el.value) >= 1) storageErrorEl.textContent = "";
@@ -125,7 +137,9 @@ async function load() {
   opacityEl.value = Math.round(settings.popup_opacity * 100).toString();
   opacityValueEl.textContent = `${opacityEl.value}%`;
   bgColorEl.value = settings.popup_bg_color;
+  bgColorValueEl.textContent = settings.popup_bg_color;
   accentColorEl.value = settings.popup_accent_color;
+  accentColorValueEl.textContent = settings.popup_accent_color;
   popupPositionEl.value = settings.popup_position;
   popupPinEl.value = settings.popup_pin;
   clearHistoryOnQuitEl.checked = settings.clear_history_on_quit;
