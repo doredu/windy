@@ -537,8 +537,13 @@ document.addEventListener("keydown", async (e) => {
   }
   // Digit shortcuts only select a row when the search box isn't focused --
   // otherwise typing "1" while searching would select an item instead of
-  // filtering.
+  // filtering. Same button-focus hazard as the Enter handler above: tabbing
+  // can focus a row's delete button (or header buttons) independently of
+  // selectedIndex, so let any focused <button>'s own key handling own the
+  // keystroke instead of double-acting on filtered[n - 1].
   if (document.activeElement === searchEl) return;
+  const activeEl = document.activeElement as HTMLElement | null;
+  if (activeEl?.tagName === "BUTTON") return;
   const n = Number(e.key);
   if (Number.isInteger(n) && n >= 1 && n <= 9 && filtered[n - 1]) {
     await selectAndClose(filtered[n - 1].id);
