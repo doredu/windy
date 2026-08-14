@@ -306,9 +306,17 @@ pub fn set_settings(
         .map_err(|e| e.to_string())?;
     s.set_setting("clear_clipboard_on_quit", if settings.clear_clipboard_on_quit { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
+
+    // max_items/retention_days are otherwise only enforced lazily inside
+    // capture() -- without this, lowering either limit here would report a
+    // successful save while any already-open popup (and the DB/disk) kept
+    // every over-the-new-limit row until the next clipboard capture, unlike
+    // retention_days' cutoff which get_history_sorted already applies live.
+    s.prune().map_err(|e| e.to_string())?;
     drop(s);
 
     let _ = app.emit("settings-updated", ());
+    let _ = app.emit("history-updated", ());
     Ok(())
 }
 

@@ -733,7 +733,7 @@ impl HistoryStore {
     /// otherwise pruned/duplicate images would orphan files under the app
     /// data dir forever, since SQLite deletion alone never touches the
     /// filesystem.
-    fn prune(&self) -> rusqlite::Result<()> {
+    pub fn prune(&self) -> rusqlite::Result<()> {
         let mut evicted_paths: Vec<String> = Vec::new();
 
         if let Some(max) = self.get_setting("max_items")?.and_then(|v| v.parse::<i64>().ok()) {
