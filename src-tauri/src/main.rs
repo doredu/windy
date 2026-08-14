@@ -221,6 +221,31 @@ fn main() {
                                 // still-minimized window the user can't see,
                                 // making Quit look like it silently hangs.
                                 let _ = w.unminimize();
+                                // Same off-screen recovery as the "settings"
+                                // branch above: if the window was last left on
+                                // a monitor that's no longer connected, the
+                                // confirm() prompt below would appear at those
+                                // now off-screen coordinates -- set_focus()
+                                // alone won't move it back, making Quit look
+                                // like it silently hangs.
+                                if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+                                    let on_screen = w
+                                        .available_monitors()
+                                        .map(|monitors| {
+                                            monitors.iter().any(|m| {
+                                                let m_pos = m.position();
+                                                let m_size = m.size();
+                                                pos.x + (size.width as i32) > m_pos.x
+                                                    && pos.x < m_pos.x + m_size.width as i32
+                                                    && pos.y + (size.height as i32) > m_pos.y
+                                                    && pos.y < m_pos.y + m_size.height as i32
+                                            })
+                                        })
+                                        .unwrap_or(true);
+                                    if !on_screen {
+                                        let _ = w.center();
+                                    }
+                                }
                                 let _ = w.set_focus();
                                 let _ = w.emit("quit-requested", ());
                             }
