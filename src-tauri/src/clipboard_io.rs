@@ -224,6 +224,24 @@ pub fn write_item_to_clipboard(item: &HistoryItem) -> Result<(), String> {
         }
         "files" => {
             let paths: Vec<String> = serde_json::from_str(item.content.as_deref().unwrap_or("[]")).map_err(|e| e.to_string())?;
+            let missing: Vec<String> = paths
+                .iter()
+                .filter(|p| !std::path::Path::new(p).exists())
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.clone())
+                })
+                .collect();
+            if !missing.is_empty() {
+                return Err(format!(
+                    "{} of {} file(s) no longer exist: {}",
+                    missing.len(),
+                    paths.len(),
+                    missing.join(", ")
+                ));
+            }
             crate::win32::write_hdrop(&paths)
         }
         "richtext" => {
@@ -407,5 +425,31 @@ mod tests {
         // Verbatim round trip -- including the <style> block that a naive
         // Fragment-only capture would have dropped.
         assert_eq!(captured.content.as_deref(), Some(html));
+    }
+
+    #[test]
+    fn selecting_a_files_item_with_missing_paths_errors_instead_of_silently_succeeding() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(
+                serde_json::to_string(&vec![
+                    "C:\\definitely\\does\\not\\exist\\gone.txt".to_string(),
+                    "C:\\also\\missing\\vanished.txt".to_string(),
+                ])
+                .unwrap(),
+            ),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "gone.txt, vanished.txt".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let err = write_item_to_clipboard(&item).expect_err("expected an error for missing files");
+        assert!(err.contains("2 of 2"), "error was: {err}");
+        assert!(err.contains("gone.txt"), "error was: {err}");
+        assert!(err.contains("vanished.txt"), "error was: {err}");
     }
 }
