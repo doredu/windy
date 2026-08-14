@@ -361,7 +361,14 @@ onTogglePopup(async (pos) => {
 });
 
 onHistoryUpdated(refresh);
-onSettingsUpdated(applyTheme);
+// Settings changes (e.g. sort order, capture types) can change what
+// get_history returns, not just theming -- re-fetch the list too, not just
+// re-apply colors, so an already-open popup doesn't show stale ordering
+// until the next capture event.
+onSettingsUpdated(async () => {
+  await applyTheme();
+  await refresh(false);
+});
 
 applyTheme();
 refresh();
