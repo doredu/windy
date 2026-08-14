@@ -49,6 +49,12 @@ fn main() {
             let initial_hotkey = opened.get_setting("hotkey")?.unwrap_or_else(|| "Ctrl+Alt+V".into());
             let store = std::sync::Arc::new(std::sync::Mutex::new(opened));
             let hotkey_handle = watcher::spawn(app.handle().clone(), store.clone(), initial_hotkey.clone());
+            // RegisterHotKey can fail silently at startup (e.g. another app
+            // already owns the combo) -- capture whether it actually took
+            // before `hotkey_handle` is moved into `app.manage`, so the tray
+            // label below can tell the user rather than confidently
+            // advertising a combo that won't fire.
+            let hotkey_active = hotkey_handle.is_active();
             app.manage(hotkey_handle);
             app.manage(store);
 
@@ -92,12 +98,17 @@ fn main() {
             // Label includes the current hotkey combo (e.g. "Open History
             // (Ctrl+Alt+V)") so users can discover/recall the shortcut from
             // the tray without opening Settings; kept in sync afterward by
-            // `set_settings` via the managed `TrayMenu` handle below.
-            let open_history = tauri::menu::MenuItemBuilder::with_id(
-                "open_history",
-                format!("Open History  ({initial_hotkey})"),
-            )
-            .build(app)?;
+            // `set_settings` via the managed `TrayMenu` handle below. If
+            // registration failed at startup, say so here too -- Settings
+            // already shows a warning banner, but the tray is the first
+            // place a user checks when the hotkey "isn't working", and it
+            // shouldn't confidently advertise a combo that won't fire.
+            let open_history_label = if hotkey_active {
+                format!("Open History  ({initial_hotkey})")
+            } else {
+                format!("Open History  ({initial_hotkey} — inactive)")
+            };
+            let open_history = tauri::menu::MenuItemBuilder::with_id("open_history", open_history_label).build(app)?;
             let settings = tauri::menu::MenuItemBuilder::with_id("settings", "Settings").build(app)?;
             let quit = tauri::menu::MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let menu = tauri::menu::MenuBuilder::new(app).items(&[&open_history, &settings, &quit]).build()?;
