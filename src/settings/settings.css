@@ -18,7 +18,8 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   margin-bottom: 16px;
   /* Iteration 81 made `body` the scroll container for tab-panel content
-     that overflows the fixed 320x220 window. Without this, scrolling down
+     that overflows the fixed-size window (still possible on the taller tabs
+     even at the current 420x480). Without this, scrolling down
      a long panel (e.g. Storage, with 4+ stacked fields) also scrolls the
      tab bar itself out of view, stranding the user with no way to switch
      tabs except scrolling back up first. Pin it to the top of the scroll
