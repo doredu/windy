@@ -77,7 +77,22 @@ let selectedIndex = 0;
 // render() below.
 let sortMode: "last_copied" | "first_copied" | "most_copied" = "last_copied";
 
+// Tracks whether the popup is currently meant to be open, updated
+// synchronously (before any `await`) by every path that opens or closes the
+// window. onTogglePopup relies on this instead of an async `win.isVisible()`
+// query to sidestep a real race: a tray-icon click both fires this window's
+// own `blur` listener (which hides it) and delivers a `toggle-popup` IPC
+// event for the same click, and `isVisible()` could go either way depending
+// on which one the webview processes first. See the `blurHideAt` guard below
+// for the other half of that race.
+let popupOpen = false;
+// Timestamp of the most recent blur-triggered hide, used by onTogglePopup to
+// tell "this toggle-popup event is the tray click that just blurred us" from
+// "a genuinely new toggle request" (see comment there).
+let blurHideAt = 0;
+
 document.getElementById("close")!.addEventListener("click", async () => {
+  popupOpen = false;
   await getCurrentWindow().hide();
 });
 
@@ -111,6 +126,7 @@ async function selectAndClose(id: number) {
     showError(err);
     return;
   }
+  popupOpen = false;
   await getCurrentWindow().hide();
 }
 
@@ -411,6 +427,7 @@ document.addEventListener("keydown", async (e) => {
       applyFilter();
       return;
     }
+    popupOpen = false;
     await getCurrentWindow().hide();
     return;
   }
@@ -522,6 +539,9 @@ document.addEventListener("keydown", async (e) => {
 // Losing focus (click-outside on Windows moves focus away from the
 // undecorated popup webview) closes the popup, same as Esc.
 window.addEventListener("blur", async () => {
+  if (!popupOpen) return;
+  popupOpen = false;
+  blurHideAt = Date.now();
   await getCurrentWindow().hide();
 });
 
@@ -533,10 +553,20 @@ onTogglePopup(async (pos) => {
   // Win+D "show desktop"), so without this check a minimized popup would
   // take the hide() branch below and never reappear -- same platform quirk
   // already fixed for the settings window's tray menu handler (main.rs).
-  if ((await win.isVisible()) && !(await win.isMinimized())) {
+  if (popupOpen && !(await win.isMinimized())) {
+    popupOpen = false;
     await win.hide();
     return;
   }
+  // A tray-icon click while the popup is already open first steals focus
+  // (firing the `blur` handler above, which hides the popup and stamps
+  // blurHideAt) and then delivers this same toggle-popup event for that
+  // very click. Without this guard, popupOpen would already be false by
+  // now and we'd fall through to the "reopen" logic below, turning a
+  // single tray click meant to *close* the popup into a flash-close-then-
+  // reopen instead.
+  if (Date.now() - blurHideAt < 400) return;
+  popupOpen = true;
   selectedIndex = 0;
   searchEl.value = "";
   await refresh();
