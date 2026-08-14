@@ -108,7 +108,18 @@ pub fn capture_current_clipboard() -> Option<NewItem> {
         let preview = if paths.len() == 1 {
             paths[0].clone()
         } else {
-            format!("{} files", paths.len())
+            let names: Vec<&str> = paths
+                .iter()
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map(|n| n.to_str().unwrap_or(p.as_str()))
+                        .unwrap_or(p.as_str())
+                })
+                .collect();
+            let joined_names = names.join(", ");
+            let truncated_names = truncate_to_byte_cap(&joined_names, 200);
+            format!("{} files: {}", paths.len(), truncated_names)
         };
         let content = serde_json::to_string(&paths).ok()?;
         return Some(NewItem {
