@@ -26,7 +26,7 @@
         <div class="hotkey-row">
           <input id="hotkey" type="text" readonly placeholder="Click Record and press keys">
           <button type="button" id="hotkeyRecord" aria-pressed="false">Record</button>
-          <button type="button" id="hotkeyReset" class="reset-btn" title="Reset to default (Ctrl+Alt+V)">Reset</button>
+          <button type="button" id="hotkeyReset" class="reset-btn" title="Reset to default (Ctrl+Alt+V)" aria-label="Reset toggle hotkey to default (Ctrl+Alt+V)">Reset</button>
         </div>
         <span id="hotkeyError" class="field-error" role="alert"></span>
         <span id="hotkeyInactiveWarning" class="field-hint error hidden" role="alert">This hotkey isn't working right now — another app may already be using it. Try recording a different one.</span>
@@ -43,14 +43,14 @@
         <label for="maxItems">Max items</label>
         <div class="control-row">
           <input id="maxItems" type="number" min="1" placeholder="Unlimited">
-          <button type="button" id="resetMaxItems" class="reset-btn" title="Reset to default (200)">Reset</button>
+          <button type="button" id="resetMaxItems" class="reset-btn" title="Reset to default (200)" aria-label="Reset max items to default (200)">Reset</button>
         </div>
       </div>
       <div class="field">
         <label for="retentionDays">Retention (days)</label>
         <div class="control-row">
           <input id="retentionDays" type="number" min="1" placeholder="Unlimited">
-          <button type="button" id="resetRetentionDays" class="reset-btn" title="Reset to default (30)">Reset</button>
+          <button type="button" id="resetRetentionDays" class="reset-btn" title="Reset to default (30)" aria-label="Reset retention days to default (30)">Reset</button>
         </div>
       </div>
       <span id="storageError" class="field-error" role="alert"></span>
@@ -82,21 +82,21 @@
         <label for="popupOpacity">Popup opacity <span id="popupOpacityValue"></span></label>
         <div class="control-row">
           <input id="popupOpacity" type="range" min="30" max="100" step="1">
-          <button type="button" id="resetOpacity" class="reset-btn" title="Reset to default (90%)">Reset</button>
+          <button type="button" id="resetOpacity" class="reset-btn" title="Reset to default (90%)" aria-label="Reset popup opacity to default (90%)">Reset</button>
         </div>
       </div>
       <div class="field">
         <label for="popupBgColor">Popup background color <span id="popupBgColorValue" class="hex-value"></span></label>
         <div class="control-row">
           <input id="popupBgColor" type="color">
-          <button type="button" id="resetBgColor" class="reset-btn" title="Reset to default (#1E1E22)">Reset</button>
+          <button type="button" id="resetBgColor" class="reset-btn" title="Reset to default (#1E1E22)" aria-label="Reset popup background color to default (#1E1E22)">Reset</button>
         </div>
       </div>
       <div class="field">
         <label for="popupAccentColor">Popup accent color <span id="popupAccentColorValue" class="hex-value"></span></label>
         <div class="control-row">
           <input id="popupAccentColor" type="color">
-          <button type="button" id="resetAccentColor" class="reset-btn" title="Reset to default (#FFFFFF)">Reset</button>
+          <button type="button" id="resetAccentColor" class="reset-btn" title="Reset to default (#FFFFFF)" aria-label="Reset popup accent color to default (#FFFFFF)">Reset</button>
         </div>
       </div>
       <div class="field">
