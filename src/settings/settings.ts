@@ -187,35 +187,55 @@ hotkeyResetEl.addEventListener("click", () => {
 // single storageErrorEl -- resetting one field to its (always-valid)
 // default must not leave a stale error referring to the other field intact,
 // nor should it leave the just-fixed error lingering if both are now valid.
+// Re-deriving via storageValidationMessage() (rather than just clearing on
+// isValidStorageField) also keeps the message accurate -- not stuck
+// blaming the just-reset field -- if the *other* field is still invalid.
 resetMaxItemsEl.addEventListener("click", () => {
   if (maxItemsEl.value !== DEFAULT_MAX_ITEMS) markDirty();
   maxItemsEl.value = DEFAULT_MAX_ITEMS;
-  if (isValidStorageField(retentionEl)) storageErrorEl.textContent = "";
+  if (storageErrorEl.textContent) storageErrorEl.textContent = storageValidationMessage();
 });
 resetRetentionDaysEl.addEventListener("click", () => {
   if (retentionEl.value !== DEFAULT_RETENTION_DAYS) markDirty();
   retentionEl.value = DEFAULT_RETENTION_DAYS;
-  if (isValidStorageField(maxItemsEl)) storageErrorEl.textContent = "";
+  if (storageErrorEl.textContent) storageErrorEl.textContent = storageValidationMessage();
 });
 
-function isValidStorageField(el: HTMLInputElement): boolean {
-  return (
-    !el.value ||
-    (Number.isInteger(Number(el.value)) &&
-      Number(el.value) >= 1 &&
-      Number(el.value) <= Number.MAX_SAFE_INTEGER)
-  );
+// Mirrors the submit handler's ordered Max items / Retention checks below,
+// returning the message for whichever field is currently invalid (Max items
+// first, matching submit's order) or "" if both are valid.
+function storageValidationMessage(): string {
+  if (maxItemsEl.value && !Number.isInteger(Number(maxItemsEl.value))) {
+    return "Max items must be blank (unlimited) or a whole number";
+  }
+  if (maxItemsEl.value && Number(maxItemsEl.value) < 1) {
+    return "Max items must be blank (unlimited) or at least 1";
+  }
+  if (maxItemsEl.value && Number(maxItemsEl.value) > Number.MAX_SAFE_INTEGER) {
+    return `Max items must be blank (unlimited) or no greater than ${Number.MAX_SAFE_INTEGER.toLocaleString()}`;
+  }
+  if (retentionEl.value && !Number.isInteger(Number(retentionEl.value))) {
+    return "Retention (days) must be blank (unlimited) or a whole number";
+  }
+  if (retentionEl.value && Number(retentionEl.value) < 1) {
+    return "Retention (days) must be blank (unlimited) or at least 1";
+  }
+  if (retentionEl.value && Number(retentionEl.value) > Number.MAX_SAFE_INTEGER) {
+    return `Retention (days) must be blank (unlimited) or no greater than ${Number.MAX_SAFE_INTEGER.toLocaleString()}`;
+  }
+  return "";
 }
 
-// Both fields share a single error message, so fixing one field must not
-// clear an error that's still describing the *other* field -- e.g. submit
-// with Max items=0 (error shown), then edit a still-blank/valid Retention
-// field: only clearing based on the field that changed would hide the
-// still-active Max items error.
+// Both fields share a single error message. Previously this only ever
+// *cleared* the message once both fields became valid -- so fixing the
+// field the error was actually about, while the other field was
+// independently invalid, left the error text stuck blaming the wrong field.
+// Re-deriving the message from the current field values (rather than just
+// checking validity) keeps it accurate as the user edits either field.
 for (const el of [maxItemsEl, retentionEl]) {
   el.addEventListener("input", () => {
-    if (isValidStorageField(maxItemsEl) && isValidStorageField(retentionEl)) {
-      storageErrorEl.textContent = "";
+    if (storageErrorEl.textContent) {
+      storageErrorEl.textContent = storageValidationMessage();
     }
   });
 }
