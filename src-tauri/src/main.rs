@@ -166,6 +166,13 @@ fn main() {
                         if settings_open {
                             if let Some(w) = app.get_webview_window("settings") {
                                 use tauri::Emitter;
+                                // Same Windows quirk as the "settings" branch
+                                // above: is_visible() reports true even while
+                                // minimized, so without unminimize() the
+                                // confirm() prompt below would appear on a
+                                // still-minimized window the user can't see,
+                                // making Quit look like it silently hangs.
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
                                 let _ = w.emit("quit-requested", ());
                             }
