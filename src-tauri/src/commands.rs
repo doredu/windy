@@ -390,7 +390,7 @@ async fn run_check(app: &AppHandle, state: &State<'_, UpdateState>) -> Result<Up
         }
         Err(e) => {
             eprintln!("update check failed: {e}");
-            Ok(UpdateStatusDto::none())
+            Err(e.to_string())
         }
     }
 }
