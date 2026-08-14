@@ -132,11 +132,12 @@ pub fn clear_history(app: AppHandle, store: State<Store>) -> Result<(), String> 
     Ok(())
 }
 
-/// Applies `clear_history_on_quit`/`clear_clipboard_on_quit` (if enabled) and
-/// exits the process. Shared by the tray's Quit menu item (used directly when
-/// the Settings window isn't open) and the `quit_app` command below (called
-/// once the Settings window's own unsaved-changes prompt has been resolved).
-pub fn perform_quit(app: &AppHandle, store: &Store) {
+/// Applies `clear_history_on_quit`/`clear_clipboard_on_quit` (if enabled).
+/// Shared by every path that ends the running process -- `perform_quit`
+/// below and `install_update`'s restart-for-update -- so a user who opted
+/// into wiping history/clipboard on quit gets that guarantee regardless of
+/// *why* the process is about to stop, not just for an explicit Quit.
+fn apply_clear_on_quit(store: &Store) {
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     let clear_history = s.get_setting("clear_history_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
     let clear_clipboard = s.get_setting("clear_clipboard_on_quit").ok().flatten().map(|v| v == "true").unwrap_or(false);
@@ -153,6 +154,14 @@ pub fn perform_quit(app: &AppHandle, store: &Store) {
             let _ = clipboard.clear();
         }
     }
+}
+
+/// Applies clear-on-quit settings (if enabled) and exits the process. Shared
+/// by the tray's Quit menu item (used directly when the Settings window
+/// isn't open) and the `quit_app` command below (called once the Settings
+/// window's own unsaved-changes prompt has been resolved).
+pub fn perform_quit(app: &AppHandle, store: &Store) {
+    apply_clear_on_quit(store);
     app.exit(0);
 }
 
@@ -441,9 +450,13 @@ pub async fn check_for_updates(app: AppHandle, state: State<'_, UpdateState>) ->
 }
 
 #[tauri::command]
-pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>) -> Result<(), String> {
+pub async fn install_update(app: AppHandle, state: State<'_, UpdateState>, store: State<'_, Store>) -> Result<(), String> {
     let update = state.lock().unwrap_or_else(PoisonError::into_inner).clone().ok_or("no update available")?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    // request_restart() ends this process just like a Quit does -- honor the
+    // same clear-on-quit settings so they aren't silently bypassed by
+    // updating instead of quitting (see apply_clear_on_quit's doc comment).
+    apply_clear_on_quit(store.inner());
     app.request_restart();
     Ok(())
 }
