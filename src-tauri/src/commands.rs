@@ -289,6 +289,11 @@ fn history_item_to_dto(item: crate::store::HistoryItem) -> HistoryItemDto {
     let search_text = match item.kind.as_str() {
         "text" => item.content.as_deref().map(|s| s.to_lowercase()),
         "richtext" => item.content_alt.as_deref().map(|s| s.to_lowercase()),
+        "files" => item
+            .content
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .map(|paths| paths.join("\n").to_lowercase()),
         _ => None,
     };
     HistoryItemDto {
@@ -514,5 +519,24 @@ mod tests {
             copy_count: 1,
         };
         assert_eq!(history_item_to_dto(item).size.as_deref(), Some("3 files"));
+    }
+
+    #[test]
+    fn dto_conversion_populates_search_text_for_files_from_full_path_list() {
+        let item = HistoryItem {
+            id: 1,
+            kind: "files".into(),
+            content: Some(r#"["C:\\Docs\\Invoice.pdf","C:\\Docs\\Notes.txt"]"#.into()),
+            content_alt: None,
+            image_path: None,
+            thumb_path: None,
+            preview: "2 files: Invoice.pdf, Notes.txt".into(),
+            created_at: 0,
+            first_copied_at: 0,
+            copy_count: 1,
+        };
+        let search_text = history_item_to_dto(item).search_text.unwrap();
+        assert!(search_text.contains("invoice.pdf"));
+        assert!(search_text.contains("notes.txt"));
     }
 }
