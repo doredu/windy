@@ -273,8 +273,20 @@ function render() {
 // in the middle of a long list keeps the selection near where it was,
 // instead of jumping back to the top every time (render() still clamps
 // selectedIndex to the new, shorter list's bounds).
+//
+// refresh() is called from several independent, overlappable triggers
+// (delete, history-updated events, settings-updated, popup toggle) with no
+// coordination between them -- two in-flight getHistory() calls can resolve
+// out of order (e.g. a slow delete-triggered refresh resolving after a
+// newer history-updated refresh already rendered), silently reverting the
+// list to stale data. A monotonic sequence number lets a resolution detect
+// it's been superseded and bail out instead of overwriting newer state.
+let refreshSeq = 0;
 async function refresh(resetSelection = true) {
-  items = await getHistory();
+  const seq = ++refreshSeq;
+  const result = await getHistory();
+  if (seq !== refreshSeq) return;
+  items = result;
   applyFilter(resetSelection);
 }
 
