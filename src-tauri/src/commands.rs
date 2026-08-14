@@ -227,6 +227,22 @@ pub fn set_settings(
     // while the UI reports the whole save as failed.
     hotkey.rebind(settings.hotkey.clone())?;
 
+    // Same reasoning applies to the OS autostart registration: it's the only
+    // other fallible external side effect in this command (e.g. registry
+    // write denied by group policy). It used to run *after* every DB write
+    // below, so a failure here would return Err while every other field the
+    // user edited (colors, hotkey, retention, sort mode, ...) was already
+    // durably committed -- the UI would report the whole save as failed and
+    // leave "Unsaved changes" showing, even though most of it had in fact
+    // saved. Attempt it first so a failure aborts before anything is written.
+    use tauri_plugin_autostart::ManagerExt;
+    let autostart = app.autolaunch();
+    if settings.start_with_windows {
+        autostart.enable().map_err(|e| e.to_string())?;
+    } else {
+        autostart.disable().map_err(|e| e.to_string())?;
+    }
+
     let s = store.lock().unwrap_or_else(PoisonError::into_inner);
     match settings.max_items {
         Some(v) => s.set_setting("max_items", &v.to_string()).map_err(|e| e.to_string())?,
@@ -260,19 +276,6 @@ pub fn set_settings(
     s.set_setting("clear_clipboard_on_quit", if settings.clear_clipboard_on_quit { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
     drop(s);
-
-    // Previously `let _ = autostart.enable()/.disable()` discarded any error
-    // (e.g. registry write denied) -- the checkbox and stored setting would
-    // then silently disagree with the actual OS autostart registration, with
-    // no feedback anywhere that "Start with Windows" didn't really take
-    // effect. Surface the failure like every other settings field instead.
-    use tauri_plugin_autostart::ManagerExt;
-    let autostart = app.autolaunch();
-    if settings.start_with_windows {
-        autostart.enable().map_err(|e| e.to_string())?;
-    } else {
-        autostart.disable().map_err(|e| e.to_string())?;
-    }
 
     let _ = app.emit("settings-updated", ());
     Ok(())
