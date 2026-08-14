@@ -234,6 +234,14 @@ function render() {
 
     row.onclick = () => selectAndClose(item.id);
 
+    // Right-click previously fell through to WebView2's default context menu
+    // (Reload / Inspect Element / etc.), which is meaningless -- and exposes
+    // devtools -- in this small borderless single-purpose popup. Every other
+    // row interaction (click, Enter, digit keys, Delete key) is purpose-built,
+    // so suppress the native menu rather than leave right-click as an
+    // unintended escape hatch.
+    row.oncontextmenu = (e) => e.preventDefault();
+
     // Keep keyboard selection (used by Enter/scrollIntoView) in sync with
     // the mouse -- otherwise hovering a different row than the last
     // arrow-key selection and pressing Enter would select the wrong item.
