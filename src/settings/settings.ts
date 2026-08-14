@@ -410,21 +410,25 @@ form.addEventListener("submit", async (e) => {
   if (maxItemsEl.value && !Number.isInteger(Number(maxItemsEl.value))) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Max items must be blank (unlimited) or a whole number";
+    maxItemsEl.focus();
     return;
   }
   if (maxItemsEl.value && Number(maxItemsEl.value) < 1) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Max items must be blank (unlimited) or at least 1";
+    maxItemsEl.focus();
     return;
   }
   if (retentionEl.value && !Number.isInteger(Number(retentionEl.value))) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or a whole number";
+    retentionEl.focus();
     return;
   }
   if (retentionEl.value && Number(retentionEl.value) < 1) {
     activateTab(storageTab, false);
     storageErrorEl.textContent = "Retention (days) must be blank (unlimited) or at least 1";
+    retentionEl.focus();
     return;
   }
   storageErrorEl.textContent = "";
@@ -437,6 +441,7 @@ form.addEventListener("submit", async (e) => {
     // feedback -- block the save instead of letting that happen by accident.
     activateTab(storageTab, false);
     captureErrorEl.textContent = "Select at least one type to save to history";
+    captureTextEl.focus();
     return;
   }
   captureErrorEl.textContent = "";
